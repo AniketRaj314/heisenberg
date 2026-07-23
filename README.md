@@ -6,13 +6,14 @@ Heisenberg is an AI-assisted weekly meal planner—because he was *the cook*. It
 
 - Generates Monday, Tuesday, Thursday, Friday, and Saturday menus at 6:00 PM IST every Friday.
 - Validates generated menus against dish categories and household guardrails before saving them.
-- Stores dishes, menus, preferences, and the last 100 conversations with lowdb.
+- Stores dishes, menus, preferences, durable scoped memories, and the last 100 conversations with lowdb.
 - Runs a dedicated Telegram bot in a dedicated Telegram group.
 - Exposes the same operations as authenticated MCP tools at `/mcp`.
-- Supports Telegram commands: `/menu`, `/generate`, `/confirm`, `/dishes`, `/backup`, and `/help`.
+- Supports Telegram commands: `/menu`, `/generate`, `/confirm`, `/dishes`, `/memory`, `/forget`, `/backup`, and `/help`.
 - Lets the Telegram agent add, rename, recategorise, retag, enable, and disable dishes, then apply routine menu changes without an extra confirmation step.
 - In groups, responds only to slash commands, direct `@bot` mentions, or replies to one of its messages; interactive responses are linked to the triggering Telegram message.
 - Tracks each speaker by stable Telegram user ID and stores their display name with conversation history, keeping Aniket and his brother distinct.
+- Retrieves relevant free-form memories automatically, separating shared household context from each person’s private context.
 
 ## Local setup
 
@@ -51,6 +52,22 @@ curl http://localhost:3000/mcp \
 
 The JSON files under `src/data` are created and seeded on first run.
 
+### Durable memory
+
+The agent can save free-form context that does not belong in the structured dish,
+menu, or preference schemas. Each memory is stored in `src/data/memories.json`
+with a free-form `content` field and a structured scope:
+
+- `household` — visible to both household members and authenticated MCP clients.
+- `person:<telegram-user-id>` — visible only when that Telegram user is speaking.
+
+Relevant accessible memories are retrieved automatically for each agent turn. The
+agent can also use `remember_context`, `search_context`, and `forget_context`.
+Use `/memory` to inspect shared and personal memories available to you, and
+`/forget <memory-id>` to remove one. Entries are deduplicated, limited to 2,000
+characters, and capped at the 500 most recently retained memories. Memory text is
+treated as untrusted user data and cannot override system or security rules.
+
 ## Create the new Telegram bot and group
 
 1. In Telegram, open the verified **@BotFather** account and send `/newbot`.
@@ -77,8 +94,8 @@ Keep the token secret. If it is exposed, revoke it with BotFather and create a r
 4. In the service’s **Variables**, add every value from `.env.example` except `PORT`, which Railway supplies. Store bearer tokens only as Railway secrets and in clients that need access.
 5. Generate a domain for the service and verify `/health` returns `{"status":"ok"}`.
 6. Railway deploys every push to the connected production branch.
-7. Mount a Railway Volume at `/app/src/data` so menus, preferences, dishes, and conversations survive deployments.
-8. Use `/backup` in Telegram periodically to download `dishes.json`, `menus.json`, and `preferences.json`.
+7. Mount a Railway Volume at `/app/src/data` so menus, preferences, dishes, memories, and conversations survive deployments.
+8. Use `/backup` in Telegram periodically to download `dishes.json`, `menus.json`, and `preferences.json`. Personal memories are intentionally excluded from the group-level backup.
 
 ### Persistence warning
 

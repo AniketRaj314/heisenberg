@@ -19,7 +19,8 @@ const files = {
   dishes: path.join(DATA_DIR, "dishes.json"),
   menus: path.join(DATA_DIR, "menus.json"),
   preferences: path.join(DATA_DIR, "preferences.json"),
-  conversations: path.join(DATA_DIR, "conversations.json")
+  conversations: path.join(DATA_DIR, "conversations.json"),
+  memories: path.join(DATA_DIR, "memories.json")
 };
 
 const defaults = {
@@ -34,7 +35,8 @@ const defaults = {
       custom_rules: []
     }
   },
-  conversations: { conversations: [] }
+  conversations: { conversations: [] },
+  memories: { memories: [] }
 };
 
 const dbs = {};
@@ -57,6 +59,21 @@ const DishUpdateSchema = z.object({
     name !== undefined || category !== undefined || tags !== undefined || active !== undefined,
   { message: "At least one dish field must be updated." }
 );
+
+const MemoryInputSchema = z.object({
+  scope: z.string().regex(/^(household|person:[A-Za-z0-9_-]{1,100})$/),
+  content: z.string().trim().min(1).max(2000),
+  source: z.string().trim().min(1).max(100).default("agent"),
+  createdBy: z.string().trim().min(1).max(100).nullable().default(null)
+}).strict();
+
+const MemorySearchSchema = z.object({
+  scopes: z.array(
+    z.string().regex(/^(household|person:[A-Za-z0-9_-]{1,100})$/)
+  ).min(1).max(10),
+  query: z.string().trim().max(1000).default(""),
+  limit: z.number().int().min(1).max(50).default(10)
+}).strict();
 
 function withStoreLock(operation) {
   const result = operationQueue.then(operation, operation);
@@ -362,6 +379,95 @@ export async function saveConversation(userMessage, assistantResponse, sender = 
     conversationsDb.data.conversations =
       conversationsDb.data.conversations.slice(-100);
     await conversationsDb.write();
+  });
+}
+
+function memorySearchScore(content, query) {
+  const normalizedContent = content.toLowerCase();
+  const normalizedQuery = query.toLowerCase().trim();
+  if (!normalizedQuery) return 0;
+  const tokens = [...new Set(normalizedQuery.match(/[\p{L}\p{N}]+/gu) ?? [])]
+    .filter((token) => token.length >= 2);
+  let score = normalizedContent.includes(normalizedQuery) ? 10 : 0;
+  for (const token of tokens) {
+    if (normalizedContent.includes(token)) score += 1;
+  }
+  return score;
+}
+
+export async function rememberContext(args) {
+  const input = MemoryInputSchema.parse(args);
+  return withStoreLock(async () => {
+    const memoriesDb = db("memories");
+    await memoriesDb.read();
+    const normalized = input.content.toLowerCase();
+    const existing = memoriesDb.data.memories.find(
+      (memory) =>
+        memory.scope === input.scope &&
+        memory.content.trim().toLowerCase() === normalized
+    );
+    const now = new Date().toISOString();
+    if (existing) {
+      existing.updated_at = now;
+      existing.source = input.source;
+      existing.created_by = input.createdBy;
+      await memoriesDb.write();
+      return structuredClone(existing);
+    }
+    const memory = {
+      id: randomUUID(),
+      scope: input.scope,
+      content: input.content,
+      source: input.source,
+      created_by: input.createdBy,
+      created_at: now,
+      updated_at: now
+    };
+    memoriesDb.data.memories.push(memory);
+    memoriesDb.data.memories = memoriesDb.data.memories.slice(-500);
+    await memoriesDb.write();
+    return structuredClone(memory);
+  });
+}
+
+export async function searchContext(args) {
+  const input = MemorySearchSchema.parse(args);
+  return withStoreLock(async () => {
+    const memoriesDb = db("memories");
+    await memoriesDb.read();
+    return structuredClone(
+      memoriesDb.data.memories
+        .filter((memory) => input.scopes.includes(memory.scope))
+        .map((memory) => ({
+          memory,
+          score: memorySearchScore(memory.content, input.query)
+        }))
+        .sort(
+          (a, b) =>
+            b.score - a.score ||
+            b.memory.updated_at.localeCompare(a.memory.updated_at)
+        )
+        .slice(0, input.limit)
+        .map(({ memory }) => memory)
+    );
+  });
+}
+
+export async function forgetContext(id, allowedScopes) {
+  const memoryId = z.string().uuid().parse(id);
+  const scopes = z.array(
+    z.string().regex(/^(household|person:[A-Za-z0-9_-]{1,100})$/)
+  ).min(1).parse(allowedScopes);
+  return withStoreLock(async () => {
+    const memoriesDb = db("memories");
+    await memoriesDb.read();
+    const index = memoriesDb.data.memories.findIndex(
+      (memory) => memory.id === memoryId && scopes.includes(memory.scope)
+    );
+    if (index < 0) throw new Error("Memory not found in an accessible scope.");
+    const [removed] = memoriesDb.data.memories.splice(index, 1);
+    await memoriesDb.write();
+    return structuredClone(removed);
   });
 }
 

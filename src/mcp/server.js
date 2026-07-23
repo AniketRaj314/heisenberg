@@ -103,6 +103,31 @@ function createServer() {
     { weeks: z.number().int().min(1).max(52).default(4) },
     (args) => executeTool("get_menu_history", args)
   );
+  register(
+    "remember_context",
+    "Save durable free-form household context. MCP calls do not have a Telegram identity, so only household scope is available.",
+    {
+      scope: z.literal("household"),
+      content: z.string().min(1).max(2000)
+    },
+    (args) => executeTool("remember_context", args, { source: "mcp" })
+  );
+  register(
+    "search_context",
+    "Search durable shared household context.",
+    {
+      query: z.string().max(1000).default(""),
+      scope: z.literal("household").default("household"),
+      limit: z.number().int().min(1).max(20).default(10)
+    },
+    (args) => executeTool("search_context", args, { source: "mcp" })
+  );
+  register(
+    "forget_context",
+    "Delete a shared household memory by id.",
+    { memory_id: z.string().uuid() },
+    (args) => executeTool("forget_context", args, { source: "mcp" })
+  );
   return server;
 }
 

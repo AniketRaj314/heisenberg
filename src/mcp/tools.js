@@ -2,11 +2,14 @@ import {
   addDish,
   confirmMenu,
   disableDish,
+  forgetContext,
   getDishes,
   getMenus,
   getPreferences,
   getRelevantMenu,
   modifyMenuDay,
+  rememberContext,
+  searchContext,
   updateDish,
   updatePreference
 } from "../db/store.js";
@@ -103,10 +106,64 @@ export const toolDefinitions = [
       type: "object",
       properties: { weeks: { type: "integer", minimum: 1, maximum: 52 } }
     }
+  },
+  {
+    name: "remember_context",
+    description:
+      "Save a durable free-form fact, soft preference, routine, or household decision. " +
+      "Use personal scope for the current speaker and household for genuinely shared context. " +
+      "Never store credentials, tokens, or transient requests.",
+    parameters: {
+      type: "object",
+      properties: {
+        scope: { type: "string", enum: ["personal", "household"] },
+        content: { type: "string", minLength: 1, maxLength: 2000 }
+      },
+      required: ["scope", "content"]
+    }
+  },
+  {
+    name: "search_context",
+    description:
+      "Search durable memories accessible to the current speaker. Use all to search " +
+      "their personal memories and shared household memories.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        scope: { type: "string", enum: ["personal", "household", "all"] },
+        limit: { type: "integer", minimum: 1, maximum: 20 }
+      }
+    }
+  },
+  {
+    name: "forget_context",
+    description:
+      "Delete a durable memory by id when the current speaker asks to forget or correct it.",
+    parameters: {
+      type: "object",
+      properties: { memory_id: { type: "string" } },
+      required: ["memory_id"]
+    }
   }
 ];
 
-export async function executeTool(name, args = {}) {
+function personalMemoryScope(context) {
+  const id = context.actor?.telegram_user_id;
+  if (!id || id === "unknown") {
+    throw new Error("A known Telegram sender is required for personal memory.");
+  }
+  return `person:${id}`;
+}
+
+function accessibleMemoryScopes(context) {
+  const scopes = ["household"];
+  const id = context.actor?.telegram_user_id;
+  if (id && id !== "unknown") scopes.push(`person:${id}`);
+  return scopes;
+}
+
+export async function executeTool(name, args = {}, context = {}) {
   switch (name) {
     case "get_current_menu": {
       const weekStart = getMonday(-1);
@@ -143,6 +200,41 @@ export async function executeTool(name, args = {}) {
         .sort((a, b) => b.week_start.localeCompare(a.week_start))
         .slice(0, args.weeks ?? 4);
     }
+    case "remember_context": {
+      if (!["personal", "household"].includes(args.scope)) {
+        throw new Error("Memory scope must be personal or household.");
+      }
+      const scope =
+        args.scope === "household" ? "household" : personalMemoryScope(context);
+      return rememberContext({
+        scope,
+        content: args.content,
+        source: context.source ?? "agent",
+        createdBy: context.actor?.telegram_user_id ?? null
+      });
+    }
+    case "search_context": {
+      if (
+        args.scope !== undefined &&
+        !["personal", "household", "all"].includes(args.scope)
+      ) {
+        throw new Error("Memory search scope must be personal, household, or all.");
+      }
+      const allScopes = accessibleMemoryScopes(context);
+      const scopes =
+        args.scope === "household"
+          ? ["household"]
+          : args.scope === "personal"
+            ? [personalMemoryScope(context)]
+            : allScopes;
+      return searchContext({
+        scopes,
+        query: args.query ?? "",
+        limit: args.limit ?? 10
+      });
+    }
+    case "forget_context":
+      return forgetContext(args.memory_id, accessibleMemoryScopes(context));
     default:
       throw new Error(`Unknown tool: ${name}`);
   }

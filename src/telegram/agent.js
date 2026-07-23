@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import {
   getConversationHistory,
   getPreferences,
+  searchContext,
   saveConversation
 } from "../db/store.js";
 import { AGENT_SYSTEM_PROMPT } from "../prompts/agent_system.js";
@@ -82,11 +83,21 @@ export async function runAgent(userMessage, telegramSender = {}) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is required for conversational messages.");
   }
-  const [history, currentMenu, preferences, dishes] = await Promise.all([
+  const currentSender = normalizeTelegramSender(telegramSender);
+  const memoryScopes = ["household"];
+  if (currentSender.telegram_user_id !== "unknown") {
+    memoryScopes.push(`person:${currentSender.telegram_user_id}`);
+  }
+  const [history, currentMenu, preferences, dishes, relevantMemories] = await Promise.all([
     getConversationHistory(10),
     executeTool("get_current_menu"),
     getPreferences(),
-    executeTool("get_dish_list")
+    executeTool("get_dish_list"),
+    searchContext({
+      scopes: memoryScopes,
+      query: userMessage,
+      limit: 12
+    })
   ]);
   const client = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -94,7 +105,6 @@ export async function runAgent(userMessage, telegramSender = {}) {
     maxRetries: 2
   });
   const menuFacts = buildMenuFacts(currentMenu, dishes);
-  const currentSender = normalizeTelegramSender(telegramSender);
   const messages = [
     {
       role: "system",
@@ -104,7 +114,8 @@ export async function runAgent(userMessage, telegramSender = {}) {
         `\n\nPREFERENCES:\n${JSON.stringify(preferences)}` +
         `\n\nMASTER DISH LIST:\n${JSON.stringify(dishes)}` +
         `\n\nDETERMINISTIC MENU FACTS:\n${JSON.stringify(menuFacts)}` +
-        `\n\nCURRENT SENDER:\n${JSON.stringify(currentSender)}`
+        `\n\nCURRENT SENDER:\n${JSON.stringify(currentSender)}` +
+        `\n\nRELEVANT DURABLE MEMORIES:\n${JSON.stringify(relevantMemories)}`
     },
     ...history.flatMap((item) => [
       { role: "user", content: historyUserContent(item) },
@@ -148,7 +159,8 @@ export async function runAgent(userMessage, telegramSender = {}) {
       try {
         const result = await executeTool(
           call.function.name,
-          JSON.parse(call.function.arguments || "{}")
+          JSON.parse(call.function.arguments || "{}"),
+          { actor: currentSender, source: "telegram-agent" }
         );
         messages.push({
           role: "tool",

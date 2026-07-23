@@ -5,8 +5,9 @@ import {
   getDishes,
   getRelevantMenu
 } from "../db/store.js";
+import { executeTool } from "../mcp/tools.js";
 import { generateMenu, getMonday } from "../scheduler/generator.js";
-import { runAgent } from "./agent.js";
+import { normalizeTelegramSender, runAgent } from "./agent.js";
 import { formatAgentResponse, formatDishes, formatMenu } from "./format.js";
 import { createRateLimiter } from "../security/rateLimit.js";
 
@@ -133,6 +134,41 @@ export async function startTelegramBot() {
     }
   });
 
+  bot.command("memory", async (ctx) => {
+    const actor = normalizeTelegramSender(ctx.from);
+    const memories = await executeTool(
+      "search_context",
+      { scope: "all", limit: 20 },
+      { actor, source: "telegram-command" }
+    );
+    if (!memories.length) {
+      await replyToMessage(ctx, "I don’t have any durable memories for you yet.");
+      return;
+    }
+    const text = memories
+      .map((memory) => {
+        const scope = memory.scope === "household" ? "household" : "personal";
+        return `[${scope}] ${memory.content}\nID: ${memory.id}`;
+      })
+      .join("\n\n");
+    await sendLongMessage(ctx, text);
+  });
+
+  bot.command("forget", async (ctx) => {
+    const memoryId = ctx.message.text.trim().split(/\s+/)[1];
+    if (!memoryId) {
+      await replyToMessage(ctx, "Usage: /forget <memory-id>\nUse /memory to find the ID.");
+      return;
+    }
+    const actor = normalizeTelegramSender(ctx.from);
+    const removed = await executeTool(
+      "forget_context",
+      { memory_id: memoryId },
+      { actor, source: "telegram-command" }
+    );
+    await replyToMessage(ctx, `Forgot: ${removed.content}`);
+  });
+
   bot.command("help", async (ctx) => {
     await replyToMessage(
       ctx,
@@ -142,10 +178,12 @@ export async function startTelegramBot() {
         "/generate — generate next week's draft",
         "/confirm — make the newest draft active",
         "/dishes — list all dishes by category",
+        "/memory — list shared and personal durable memories",
+        "/forget <memory-id> — delete an accessible memory",
         "/backup — download the important JSON data files",
         "/help — show this help",
         "",
-        "You can also message me naturally to change menus, dishes, or preferences."
+        "You can also message me naturally to change menus, dishes, preferences, or memories."
       ].join("\n")
     );
   });

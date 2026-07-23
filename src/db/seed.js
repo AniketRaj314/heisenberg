@@ -10,8 +10,9 @@ const seedDishes = {
     "Chicken Pulao"
   ],
   chicken_main: ["Chicken Curry", "Chicken Chilli", "Tawa Chicken 65"],
-  paneer_main: ["Palak Paneer", "Mix Veg Paneer", "Paneer Sauté", "Paneer Chilli"],
+  paneer_main: ["Palak Paneer", "Paneer Sauté", "Paneer Chilli"],
   sabzi: [
+    "Mix Veg Paneer",
     "Aloo Gobi Capsicum Masala",
     "Egg Bhurji",
     "Egg Curry",
