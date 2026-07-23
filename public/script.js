@@ -56,6 +56,10 @@ const state = document.querySelector("#sim-state");
 const title = document.querySelector("#sim-title");
 const footnote = document.querySelector("#sim-footnote");
 const panel = document.querySelector("#simulation-panel");
+const sceneOrder = Object.keys(scenes);
+const rotationDelay = 3000;
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+let rotationTimer;
 
 function renderScene(name) {
   const scene = scenes[name];
@@ -106,8 +110,31 @@ function renderScene(name) {
   }
 }
 
+function scheduleRotation() {
+  window.clearTimeout(rotationTimer);
+  for (const tab of tabs) tab.classList.remove("is-progressing");
+  if (reducedMotion.matches || document.hidden) return;
+
+  const activeTab = tabs.find((tab) => tab.classList.contains("is-active"));
+  if (!activeTab) return;
+  void activeTab.offsetWidth;
+  activeTab.classList.add("is-progressing");
+
+  rotationTimer = window.setTimeout(() => {
+    const currentIndex = sceneOrder.indexOf(activeTab.dataset.scene);
+    const nextScene = sceneOrder[(currentIndex + 1) % sceneOrder.length];
+    renderScene(nextScene);
+    scheduleRotation();
+  }, rotationDelay);
+}
+
+function selectScene(name) {
+  renderScene(name);
+  scheduleRotation();
+}
+
 for (const tab of tabs) {
-  tab.addEventListener("click", () => renderScene(tab.dataset.scene));
+  tab.addEventListener("click", () => selectScene(tab.dataset.scene));
   tab.addEventListener("keydown", (event) => {
     if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
     event.preventDefault();
@@ -115,10 +142,14 @@ for (const tab of tabs) {
     const direction = event.key === "ArrowRight" ? 1 : -1;
     const next = tabs[(current + direction + tabs.length) % tabs.length];
     next.focus();
-    renderScene(next.dataset.scene);
+    selectScene(next.dataset.scene);
   });
 }
+
+document.addEventListener("visibilitychange", scheduleRotation);
+reducedMotion.addEventListener("change", scheduleRotation);
 
 const year = document.querySelector("#year");
 if (year) year.textContent = String(new Date().getFullYear());
 renderScene("draft");
+scheduleRotation();
