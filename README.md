@@ -30,6 +30,8 @@ npm start
 
 The public landing page, web API, and MCP server share `http://localhost:3000`. The landing page is at `/`, health is at `/health`, the bearer-protected API is at `/api`, and MCP is at `/mcp`. The API requires `Authorization: Bearer <API_BEARER_TOKEN>`; the public landing page and health check do not. The application refuses to start if the API secret is absent.
 
+`/health` returns public-safe operational metadata: the package version, process uptime and start time, memory usage, deployment environment and Railway commit (when available), plus HTTP, storage, MCP, Telegram, and scheduler states. It does not expose secrets or household data.
+
 Telegram is a trusted internal entry point: the bot accepts updates only from `TELEGRAM_CHAT_ID` and calls application services directly rather than going through the public HTTP API. Set `TELEGRAM_ALLOWED_USER_IDS` to a comma-separated list of numeric user IDs for per-user authorization. If it is empty, every member of the configured group is trusted. No bypass header or externally spoofable “Telegram source” flag is used.
 
 Every MCP request must include `Authorization: Bearer <MCP_BEARER_TOKEN>`. The application refuses to start the MCP server if this secret is absent.
@@ -92,7 +94,7 @@ Keep the token secret. If it is exposed, revoke it with BotFather and create a r
 2. In [Railway](https://railway.com), create a project from that GitHub repository.
 3. Generate separate production secrets for `API_BEARER_TOKEN` and `MCP_BEARER_TOKEN` with `openssl rand -hex 32`.
 4. In the service’s **Variables**, add every value from `.env.example` except `PORT`, which Railway supplies. Store bearer tokens only as Railway secrets and in clients that need access.
-5. Generate a domain for the service and verify `/health` returns `{"status":"ok"}`.
+5. Generate a domain for the service and verify `/health` returns HTTP 200 with `"status":"ok"`, `"version":"1.0.0"`, and healthy component states. Telegram may report `"disabled"` only in a deliberately bot-free environment.
 6. Railway deploys every push to the connected production branch.
 7. Mount a Railway Volume at `/app/src/data` so menus, preferences, dishes, memories, and conversations survive deployments.
 8. Use `/backup` in Telegram periodically to download `dishes.json`, `menus.json`, and `preferences.json`. Personal memories are intentionally excluded from the group-level backup.
