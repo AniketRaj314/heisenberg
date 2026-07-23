@@ -348,7 +348,7 @@ export async function getConversationHistory(limit = 10) {
   });
 }
 
-export async function saveConversation(userMessage, assistantResponse) {
+export async function saveConversation(userMessage, assistantResponse, sender = null) {
   return withStoreLock(async () => {
     const conversationsDb = db("conversations");
     await conversationsDb.read();
@@ -356,6 +356,7 @@ export async function saveConversation(userMessage, assistantResponse) {
       id: randomUUID(),
       user_message: userMessage,
       assistant_response: assistantResponse,
+      sender,
       timestamp: new Date().toISOString()
     });
     conversationsDb.data.conversations =

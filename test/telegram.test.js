@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildMenuFacts } from "../src/telegram/agent.js";
+import {
+  buildMenuFacts,
+  normalizeTelegramSender
+} from "../src/telegram/agent.js";
+import { shouldRespondToMessage } from "../src/telegram/bot.js";
 import { formatAgentResponse } from "../src/telegram/format.js";
 
 test("agent Markdown is converted to safe Telegram HTML", () => {
@@ -33,4 +37,75 @@ test("menu facts expose valid non-consecutive side choices", () => {
   assert.deepEqual(facts.eligible_days_without_a_side, ["Saturday"]);
   assert.deepEqual(facts.valid_sides_for_uncovered_days.Saturday, ["Side A", "Side B"]);
   assert.match(facts.side_allocation_rule, /not on consecutive scheduled meal days/);
+});
+
+test("group messages trigger only for this bot, replies to it, or commands", () => {
+  const botInfo = { id: 42, username: "heisenberg_chef_bot" };
+  assert.equal(
+    shouldRespondToMessage(
+      {
+        text: "Hey @heisenberg_chef_bot, update Saturday",
+        entities: [{
+          type: "mention",
+          offset: 4,
+          length: "@heisenberg_chef_bot".length
+        }]
+      },
+      botInfo
+    ),
+    true
+  );
+  assert.equal(
+    shouldRespondToMessage(
+      {
+        text: "Continue",
+        reply_to_message: { from: { id: 42, is_bot: true } }
+      },
+      botInfo
+    ),
+    true
+  );
+  assert.equal(shouldRespondToMessage({ text: "/menu" }, botInfo), true);
+  assert.equal(
+    shouldRespondToMessage(
+      {
+        text: "Hey @some_other_bot",
+        entities: [{ type: "mention", offset: 4, length: 15 }]
+      },
+      botInfo
+    ),
+    false
+  );
+  assert.equal(
+    shouldRespondToMessage({ text: "What are we cooking this week?" }, botInfo),
+    false
+  );
+});
+
+test("Telegram senders retain stable, distinct household identities", () => {
+  assert.deepEqual(
+    normalizeTelegramSender({
+      id: 101,
+      first_name: "Aniket",
+      last_name: "Singh",
+      username: "aniket"
+    }),
+    {
+      telegram_user_id: "101",
+      display_name: "Aniket Singh",
+      username: "aniket"
+    }
+  );
+  assert.deepEqual(
+    normalizeTelegramSender({
+      id: 202,
+      first_name: "Rahul",
+      username: "rahul"
+    }),
+    {
+      telegram_user_id: "202",
+      display_name: "Rahul",
+      username: "rahul"
+    }
+  );
 });

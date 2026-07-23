@@ -122,3 +122,18 @@ test("dish updates reject duplicate names and empty changes", async () => {
     /At least one dish field/
   );
 });
+
+test("conversation history preserves Telegram sender identity", async () => {
+  await store.saveConversation(
+    "What is for dinner?",
+    "Chicken Curry.",
+    {
+      telegram_user_id: "202",
+      display_name: "Rahul",
+      username: "rahul"
+    }
+  );
+  const history = await store.getConversationHistory(1);
+  assert.equal(history[0].sender.telegram_user_id, "202");
+  assert.equal(history[0].sender.display_name, "Rahul");
+});

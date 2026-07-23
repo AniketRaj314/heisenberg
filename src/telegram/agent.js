@@ -49,7 +49,36 @@ export function buildMenuFacts(menu, dishes) {
   };
 }
 
-export async function runAgent(userMessage) {
+function cleanIdentityField(value, maxLength = 100) {
+  const cleaned = String(value ?? "").trim();
+  return cleaned ? cleaned.slice(0, maxLength) : null;
+}
+
+export function normalizeTelegramSender(sender = {}) {
+  const firstName = cleanIdentityField(sender.first_name);
+  const lastName = cleanIdentityField(sender.last_name);
+  const username = cleanIdentityField(sender.username);
+  const displayName =
+    [firstName, lastName].filter(Boolean).join(" ") ||
+    (username ? `@${username}` : null) ||
+    "Unknown Telegram user";
+  return {
+    telegram_user_id: cleanIdentityField(sender.id, 30) ?? "unknown",
+    display_name: displayName,
+    username
+  };
+}
+
+function historyUserContent(item) {
+  const sender = item.sender ?? {
+    telegram_user_id: "unknown",
+    display_name: "Unknown sender (legacy conversation)",
+    username: null
+  };
+  return `SENDER:\n${JSON.stringify(sender)}\n\nMESSAGE:\n${item.user_message}`;
+}
+
+export async function runAgent(userMessage, telegramSender = {}) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is required for conversational messages.");
   }
@@ -65,6 +94,7 @@ export async function runAgent(userMessage) {
     maxRetries: 2
   });
   const menuFacts = buildMenuFacts(currentMenu, dishes);
+  const currentSender = normalizeTelegramSender(telegramSender);
   const messages = [
     {
       role: "system",
@@ -73,13 +103,17 @@ export async function runAgent(userMessage) {
         `\n\nCURRENT MENU:\n${JSON.stringify(currentMenu)}` +
         `\n\nPREFERENCES:\n${JSON.stringify(preferences)}` +
         `\n\nMASTER DISH LIST:\n${JSON.stringify(dishes)}` +
-        `\n\nDETERMINISTIC MENU FACTS:\n${JSON.stringify(menuFacts)}`
+        `\n\nDETERMINISTIC MENU FACTS:\n${JSON.stringify(menuFacts)}` +
+        `\n\nCURRENT SENDER:\n${JSON.stringify(currentSender)}`
     },
     ...history.flatMap((item) => [
-      { role: "user", content: item.user_message },
+      { role: "user", content: historyUserContent(item) },
       { role: "assistant", content: item.assistant_response }
     ]),
-    { role: "user", content: userMessage }
+    {
+      role: "user",
+      content: `SENDER:\n${JSON.stringify(currentSender)}\n\nMESSAGE:\n${userMessage}`
+    }
   ];
   const tools = toolDefinitions.map((tool) => ({
     type: "function",
@@ -131,6 +165,6 @@ export async function runAgent(userMessage) {
     }
   }
   if (!answer) throw new Error("The agent exceeded its tool-call limit.");
-  await saveConversation(userMessage, answer);
+  await saveConversation(userMessage, answer, currentSender);
   return answer;
 }

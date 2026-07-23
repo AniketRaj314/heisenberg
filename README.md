@@ -11,6 +11,8 @@ Heisenberg is an AI-assisted weekly meal planner—because he was *the cook*. It
 - Exposes the same operations as authenticated MCP tools at `/mcp`.
 - Supports Telegram commands: `/menu`, `/generate`, `/confirm`, `/dishes`, `/backup`, and `/help`.
 - Lets the Telegram agent add, rename, recategorise, retag, enable, and disable dishes, then apply routine menu changes without an extra confirmation step.
+- In groups, responds only to slash commands, direct `@bot` mentions, or replies to one of its messages; interactive responses are linked to the triggering Telegram message.
+- Tracks each speaker by stable Telegram user ID and stores their display name with conversation history, keeping Aniket and his brother distinct.
 
 ## Local setup
 

@@ -28,16 +28,53 @@ function allowedChat(ctx) {
   );
 }
 
+function linkedReplyOptions(ctx, options = {}) {
+  const messageId = ctx.message?.message_id;
+  if (!messageId) return options;
+  return {
+    ...options,
+    reply_parameters: {
+      allow_sending_without_reply: true,
+      ...options.reply_parameters,
+      message_id: messageId
+    }
+  };
+}
+
+async function replyToMessage(ctx, text, options = {}) {
+  return ctx.reply(text, linkedReplyOptions(ctx, options));
+}
+
 async function sendLongMessage(ctx, text, options = {}) {
   const chunks = text.match(/[\s\S]{1,3900}/g) ?? [text];
-  for (const chunk of chunks) await ctx.reply(chunk, options);
+  for (const chunk of chunks) await replyToMessage(ctx, chunk, options);
 }
 
 async function sendAgentResponse(ctx, text) {
   const chunks = text.match(/[\s\S]{1,3400}(?=\n|$)|[\s\S]{1,3400}/g) ?? [text];
   for (const chunk of chunks) {
-    await ctx.reply(formatAgentResponse(chunk), { parse_mode: "HTML" });
+    await replyToMessage(ctx, formatAgentResponse(chunk), { parse_mode: "HTML" });
   }
+}
+
+export function shouldRespondToMessage(message, botInfo) {
+  const text = message?.text ?? "";
+  if (text.startsWith("/")) return true;
+  if (message?.reply_to_message?.from?.id === botInfo?.id) return true;
+  const username = botInfo?.username?.toLowerCase();
+  return (message?.entities ?? []).some((entity) => {
+    if (entity.type === "text_mention") return entity.user?.id === botInfo?.id;
+    if (entity.type !== "mention" || !username) return false;
+    return text
+      .slice(entity.offset, entity.offset + entity.length)
+      .toLowerCase() === `@${username}`;
+  });
+}
+
+function removeBotMention(text, username) {
+  if (!username) return text.trim();
+  const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(new RegExp(`@${escaped}`, "gi"), "").trim();
 }
 
 export function getTelegramBot() {
@@ -69,15 +106,15 @@ export async function startTelegramBot() {
   });
 
   bot.command("generate", async (ctx) => {
-    await ctx.reply("Cooking up next week's draft…");
+    await replyToMessage(ctx, "Cooking up next week's draft…");
     const menu = await generateMenu();
     await sendLongMessage(ctx, formatMenu(menu), { parse_mode: "Markdown" });
-    await ctx.reply("Reply with changes, or use /confirm when it looks right.");
+    await replyToMessage(ctx, "Reply with changes, or use /confirm when it looks right.");
   });
 
   bot.command("confirm", async (ctx) => {
     const menu = await confirmMenu();
-    await ctx.reply(`✅ Menu for ${menu.week_start} is now active.`);
+    await replyToMessage(ctx, `✅ Menu for ${menu.week_start} is now active.`);
   });
 
   bot.command("dishes", async (ctx) => {
@@ -90,13 +127,15 @@ export async function startTelegramBot() {
     const files = getDataFiles();
     for (const name of ["dishes", "menus", "preferences"]) {
       await ctx.replyWithDocument(Input.fromLocalFile(files[name]), {
+        ...linkedReplyOptions(ctx),
         caption: `${name}.json`
       });
     }
   });
 
   bot.command("help", async (ctx) => {
-    await ctx.reply(
+    await replyToMessage(
+      ctx,
       [
         "Heisenberg commands:",
         "/menu — show the current menu",
@@ -113,21 +152,30 @@ export async function startTelegramBot() {
 
   bot.on("text", async (ctx) => {
     if (ctx.message.text.startsWith("/")) return;
+    if (!shouldRespondToMessage(ctx.message, ctx.botInfo)) return;
     const rate = messageLimiter.consume(String(ctx.from?.id ?? ctx.chat.id));
     if (!rate.allowed) {
       const minutes = Math.max(1, Math.ceil(rate.retryAfterMs / 60_000));
-      await ctx.reply(`Slow down, chef — try again in about ${minutes} minute(s).`);
+      await replyToMessage(
+        ctx,
+        `Slow down, chef — try again in about ${minutes} minute(s).`
+      );
       return;
     }
     await ctx.sendChatAction("typing");
-    const response = await runAgent(ctx.message.text);
+    const userMessage =
+      removeBotMention(ctx.message.text, ctx.botInfo?.username) || "Hello";
+    const response = await runAgent(userMessage, ctx.from);
     await sendAgentResponse(ctx, response);
   });
 
   bot.catch(async (error, ctx) => {
     console.error("Telegram update failed:", error);
     if (ctx?.chat) {
-      await ctx.reply("I hit an internal error. Please try again shortly.").catch(() => {});
+      await replyToMessage(
+        ctx,
+        "I hit an internal error. Please try again shortly."
+      ).catch(() => {});
     }
   });
 
