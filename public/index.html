@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#13261f">
+    <meta
+      name="description"
+      content="Heisenberg is a Telegram-first AI meal planner that drafts, edits, remembers, and validates a household's weekly dinners."
+    >
+    <meta property="og:title" content="Heisenberg — The cook is in">
+    <meta
+      property="og:description"
+      content="A Telegram-first AI meal planner for one household, two people, and five dinners a week."
+    >
+    <meta property="og:type" content="website">
+    <title>Heisenberg — The cook is in</title>
+    <link rel="icon" href="/assets/heisenberg-avatar.jpg">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Heisenberg home">
+        <span class="brand-mark" aria-hidden="true">H.</span>
+        <span>Heisenberg</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="#how-it-works">How it cooks</a>
+        <a href="#features">Features</a>
+        <a href="#under-the-hood">Under the hood</a>
+      </nav>
+      <a class="button button-small button-dark" href="#simulation">Watch the flow</a>
+    </header>
+
+    <main id="main">
+      <section class="hero section-shell" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span></span> Private AI meal operations</p>
+          <h1 id="hero-title">Dinner, handled.<br><em>No spreadsheet required.</em></h1>
+          <p class="hero-deck">
+            Heisenberg is a Telegram-first meal planner that drafts the week,
+            takes changes in plain English, remembers who likes what, and keeps
+            every dinner inside the household rules.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#simulation">See it cook</a>
+            <a class="text-link" href="/health">
+              <span class="status-dot" aria-hidden="true"></span>
+              Check system status
+            </a>
+          </div>
+          <dl class="hero-stats" aria-label="Project highlights">
+            <div><dt>Friday, 6 PM</dt><dd>fresh weekly draft</dd></div>
+            <div><dt>5 dinners</dt><dd>planned each week</dd></div>
+            <div><dt>2 people</dt><dd>separate memories</dd></div>
+          </dl>
+        </div>
+
+        <div class="hero-product" aria-label="A simulated Heisenberg Telegram conversation">
+          <div class="orbit orbit-one" aria-hidden="true"></div>
+          <div class="orbit orbit-two" aria-hidden="true"></div>
+          <div class="telegram-window">
+            <div class="telegram-topbar">
+              <img
+                src="/assets/heisenberg-avatar.jpg"
+                alt=""
+                width="52"
+                height="52"
+              >
+              <div>
+                <strong>Heisenberg</strong>
+                <span><i></i> cooking for Aniket</span>
+              </div>
+              <span class="topbar-dots" aria-hidden="true">•••</span>
+            </div>
+            <div class="chat-thread">
+              <div class="chat-date">FRIDAY · 6:00 PM</div>
+              <div class="message message-bot">
+                <span class="reply-label">Weekly draft · Jul 27</span>
+                <strong>The menu is ready.</strong>
+                <p>Five dinners, protein covered, prep notes included.</p>
+                <time>6:00</time>
+              </div>
+              <div class="message message-user">
+                Can Saturday use Lemon Pepper Chicken?
+                <time>6:04 ✓✓</time>
+              </div>
+              <div class="message message-bot message-featured">
+                <span class="reply-label">↳ Replying to Aniket</span>
+                <strong>Done.</strong>
+                <p>It appeared Monday, so the repeat isn’t consecutive. Saturday is updated.</p>
+                <time>6:04</time>
+              </div>
+            </div>
+            <div class="composer" aria-hidden="true">
+              <span>Message Heisenberg…</span>
+              <b>↑</b>
+            </div>
+          </div>
+          <div class="floating-note note-memory">
+            <span>MEMORY</span>
+            <strong>Knows who’s asking</strong>
+          </div>
+          <div class="floating-note note-validated">
+            <span>VALIDATOR</span>
+            <strong>0 rules broken</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="marquee" aria-label="Heisenberg capabilities">
+        <div>
+          <span>Plans the week</span><i>✳</i>
+          <span>Chats in Telegram</span><i>✳</i>
+          <span>Remembers preferences</span><i>✳</i>
+          <span>Validates every change</span><i>✳</i>
+          <span>Plans the week</span><i>✳</i>
+          <span>Chats in Telegram</span><i>✳</i>
+        </div>
+      </section>
+
+      <section id="how-it-works" class="steps section-shell">
+        <div class="section-heading">
+          <p class="eyebrow"><span></span> The weekly ritual</p>
+          <h2>It plans. You react.<br>The menu gets better.</h2>
+          <p>
+            No dashboard to maintain. The household stays in the group chat it
+            already uses.
+          </p>
+        </div>
+        <ol class="step-grid">
+          <li>
+            <span class="step-number">01</span>
+            <div class="step-icon">FRI</div>
+            <h3>A draft arrives</h3>
+            <p>
+              Every Friday at 6 PM, Heisenberg assembles five dinners using the
+              active dish list, rotation history, and household guardrails.
+            </p>
+          </li>
+          <li>
+            <span class="step-number">02</span>
+            <div class="step-icon">Aa</div>
+            <h3>Change it by chatting</h3>
+            <p>
+              Tag the bot or reply to its message. Swap a dish, recategorise an
+              ingredient, change a rule, or ask why something was chosen.
+            </p>
+          </li>
+          <li>
+            <span class="step-number">03</span>
+            <div class="step-icon">✓</div>
+            <h3>Confirm and cook</h3>
+            <p>
+              The server validates every edit, keeps prep notes attached, then
+              stores the confirmed plan on persistent Railway storage.
+            </p>
+          </li>
+        </ol>
+      </section>
+
+      <section id="simulation" class="simulation-section">
+        <div class="section-shell simulation-shell">
+          <div class="simulation-intro">
+            <p class="eyebrow eyebrow-light"><span></span> A tiny simulation</p>
+            <h2>One chat.<br>Three useful jobs.</h2>
+            <p>
+              Tap through the flow to see what the bot actually does. These are
+              representative screens—not a generic chatbot demo.
+            </p>
+            <div class="simulation-tabs" role="tablist" aria-label="Simulation scenes">
+              <button
+                id="tab-draft"
+                class="simulation-tab is-active"
+                type="button"
+                role="tab"
+                aria-selected="true"
+                aria-controls="simulation-panel"
+                data-scene="draft"
+              >Draft</button>
+              <button
+                id="tab-edit"
+                class="simulation-tab"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="simulation-panel"
+                data-scene="edit"
+              >Edit</button>
+              <button
+                id="tab-memory"
+                class="simulation-tab"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="simulation-panel"
+                data-scene="memory"
+              >Remember</button>
+            </div>
+          </div>
+
+          <div
+            id="simulation-panel"
+            class="simulation-board"
+            role="tabpanel"
+            aria-labelledby="tab-draft"
+            tabindex="0"
+          >
+            <div class="sim-chat">
+              <div class="sim-chat-header">
+                <img src="/assets/heisenberg-avatar.jpg" alt="" width="44" height="44">
+                <div><strong>Heisenberg</strong><span>household meal agent</span></div>
+              </div>
+              <div id="sim-messages" class="sim-messages" aria-live="polite"></div>
+            </div>
+            <div class="sim-output">
+              <div class="sim-output-top">
+                <span id="sim-kicker">WEEK OF JUL 27</span>
+                <span id="sim-state" class="state-pill">DRAFT</span>
+              </div>
+              <h3 id="sim-title">The week, plated.</h3>
+              <div id="sim-content" class="menu-stack"></div>
+              <div class="validation-row">
+                <span><i></i> Server validated</span>
+                <span id="sim-footnote">5 days · 5 categories</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" class="features section-shell">
+        <div class="section-heading feature-heading">
+          <p class="eyebrow"><span></span> What’s inside</p>
+          <h2>More operator<br>than chatbot.</h2>
+          <p>
+            The clever part is not generating text. It is turning conversation
+            into controlled changes that survive the next deploy.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card feature-wide">
+            <span class="feature-tag">01 · PLANNING</span>
+            <h3>A menu with actual constraints</h3>
+            <p>
+              Five slots, active dishes only, category limits, rotation history,
+              prep dependencies, and server-side checks after the AI responds.
+            </p>
+            <div class="mini-week" aria-label="Example weekly menu">
+              <span><b>M</b> Mix Veg Paneer</span>
+              <span><b>T</b> Chicken Curry</span>
+              <span><b>T</b> Palak Paneer</span>
+              <span><b>F</b> Hakka Noodles</span>
+              <span><b>S</b> Egg Curry</span>
+            </div>
+          </article>
+          <article class="feature-card">
+            <span class="feature-tag">02 · IDENTITY</span>
+            <h3>Knows who is talking</h3>
+            <p>
+              Telegram user IDs keep Aniket and his brother distinct, so advice
+              and personal context go to the right person.
+            </p>
+            <div class="identity-pair" aria-hidden="true">
+              <span>A</span><i></i><span>B</span>
+            </div>
+          </article>
+          <article class="feature-card feature-accent">
+            <span class="feature-tag">03 · MEMORY</span>
+            <h3>Useful context that lasts</h3>
+            <p>
+              Free-form memories can be personal or shared. They are searchable,
+              inspectable, forgettable, and never trusted as system instructions.
+            </p>
+            <div class="memory-chip">“Friday dinners should be quick.”</div>
+          </article>
+          <article class="feature-card">
+            <span class="feature-tag">04 · TELEGRAM</span>
+            <h3>Present, not noisy</h3>
+            <p>
+              It responds only to a tag, a reply, or a slash command—and every
+              answer links back to the message that triggered it.
+            </p>
+            <div class="mention-chip">@heisenberg_chef_bot</div>
+          </article>
+          <article class="feature-card feature-wide feature-dark">
+            <span class="feature-tag">05 · INTEGRATIONS</span>
+            <h3>A bot, an API, and an MCP server</h3>
+            <p>
+              Telegram calls the application directly. The HTTP API and MCP
+              tools live on the same service with independent bearer tokens.
+              The public landing page and health check stay open.
+            </p>
+            <div class="port-map" aria-label="Service route summary">
+              <span><b>/</b> PUBLIC SITE</span>
+              <span><b>/api</b> BEARER AUTH</span>
+              <span><b>/mcp</b> SEPARATE TOKEN</span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="under-the-hood" class="architecture">
+        <div class="section-shell">
+          <div class="architecture-copy">
+            <p class="eyebrow eyebrow-light"><span></span> Under the hood</p>
+            <h2>Small enough<br>to understand.</h2>
+            <p>
+              One Node.js service, one persistent volume, one household. No
+              microservice maze required.
+            </p>
+          </div>
+          <div class="architecture-flow" aria-label="System architecture">
+            <div><span>01</span><strong>Telegram</strong><small>tag or reply</small></div>
+            <i aria-hidden="true">→</i>
+            <div><span>02</span><strong>AI agent</strong><small>tools + memory</small></div>
+            <i aria-hidden="true">→</i>
+            <div><span>03</span><strong>Validator</strong><small>hard rules</small></div>
+            <i aria-hidden="true">→</i>
+            <div><span>04</span><strong>Railway</strong><small>JSON volume</small></div>
+          </div>
+          <div class="stack-links">
+            <a href="https://core.telegram.org/bots" rel="noreferrer">Telegram Bot API ↗</a>
+            <a href="https://platform.openai.com/docs" rel="noreferrer">OpenAI API ↗</a>
+            <a href="https://modelcontextprotocol.io/" rel="noreferrer">Model Context Protocol ↗</a>
+            <a href="https://railway.com/" rel="noreferrer">Railway ↗</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="closing section-shell">
+        <div>
+          <p class="eyebrow"><span></span> The cook is in</p>
+          <h2>Less “what should we eat?”<br>More eating.</h2>
+        </div>
+        <div class="closing-actions">
+          <a
+            class="button button-primary"
+            href="https://t.me/heisenberg_chef_bot"
+            rel="noreferrer"
+          >Meet the bot</a>
+          <p>Private household project.<br>Publicly documented, sensibly secured.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="footer-brand">
+        <span class="brand-mark" aria-hidden="true">H.</span>
+        <div><strong>Heisenberg</strong><small>Because he was <em>the cook.</em></small></div>
+      </div>
+      <p>
+        Built by
+        <a href="https://aniketraj.me" rel="noreferrer">Aniket</a>
+        and
+        <a href="https://rushilraj.me" rel="noreferrer">Rushil</a>.
+      </p>
+      <div class="footer-links">
+        <a href="/health">System status</a>
+        <a href="#main">Back to top ↑</a>
+      </div>
+      <small class="copyright">© <span id="year"></span> Heisenberg</small>
+    </footer>
+  </body>
+</html>

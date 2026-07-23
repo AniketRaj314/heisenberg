@@ -28,7 +28,7 @@ cp .env.example .env
 npm start
 ```
 
-The web API and MCP server share `http://localhost:3000`. Health is at `/health`, and MCP is at `/mcp`. The API requires `Authorization: Bearer <API_BEARER_TOKEN>` on every API route except `/health`, which remains public for Railway health checks. The application refuses to start if the API secret is absent.
+The public landing page, web API, and MCP server share `http://localhost:3000`. The landing page is at `/`, health is at `/health`, the bearer-protected API is at `/api`, and MCP is at `/mcp`. The API requires `Authorization: Bearer <API_BEARER_TOKEN>`; the public landing page and health check do not. The application refuses to start if the API secret is absent.
 
 Telegram is a trusted internal entry point: the bot accepts updates only from `TELEGRAM_CHAT_ID` and calls application services directly rather than going through the public HTTP API. Set `TELEGRAM_ALLOWED_USER_IDS` to a comma-separated list of numeric user IDs for per-user authorization. If it is empty, every member of the configured group is trusted. No bypass header or externally spoofable “Telegram source” flag is used.
 
@@ -133,6 +133,7 @@ Then verify `/health`, `/menu`, `/generate`, a natural-language menu change, `/c
 ## Project map
 
 - `index.js` — initializes storage, the shared API/MCP server, cron, and Telegram.
+- `public/` — public landing page, product simulation, and bot profile asset.
 - `src/db/store.js` — lowdb files and all storage helpers.
 - `src/db/seed.js` — first-run master dish seeding.
 - `src/scheduler/generator.js` — prompt execution, retries, and rule validation.
