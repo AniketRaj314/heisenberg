@@ -26,7 +26,10 @@ GUARDRAILS:
 - Paneer dishes may occur at most ${preferences.max_paneer_per_week} time(s), including the random slot.
 - No main dish may repeat within the week.
 - If Dosa Chutney or Sandwich appears, both must appear in the same week on adjacent scheduled days. Add a prep note explaining that their masala aloo is shared.
-- Assign a dry_chicken side on every day except chicken_main day.
+- Each meal has exactly one substantial main dish. Never pair two main-category dishes.
+- Assign exactly one dry_chicken side on every day except chicken_main day.
+- A chicken_main is complete on its own and must have side_chicken set to null.
+- Only a dry_chicken dish is valid in side_chicken; never use a sabzi, paneer_main, carb_heavy, or chicken_main as a side.
 - Dry-chicken sides may repeat within the week, but the same side must not appear on consecutive scheduled meal days. Do not invent a side.
 - Respect needs_overnight_marination: add a prior-day prep note when Tandoori Chicken is used.
 - Avoid main dishes used in the last ${preferences.cross_week_avoid_last_n_weeks ?? 3} weeks unless the available rotation is exhausted.

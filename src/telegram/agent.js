@@ -9,14 +9,37 @@ import { AGENT_SYSTEM_PROMPT } from "../prompts/agent_system.js";
 import { executeTool, toolDefinitions } from "../mcp/tools.js";
 
 export function buildMenuFacts(menu, dishes) {
-  if (!menu) return { menu_available: false };
+  const activeDishes = dishes.filter((dish) => dish.active);
+  const chickenMains = activeDishes
+    .filter((dish) => dish.category === "chicken_main")
+    .map((dish) => dish.name);
+  const dryChickenSides = activeDishes
+    .filter((dish) => dish.category === "dry_chicken")
+    .map((dish) => dish.name);
+  const nonChickenMains = activeDishes
+    .filter((dish) =>
+      ["carb_heavy", "paneer_main", "sabzi"].includes(dish.category)
+    )
+    .map((dish) => dish.name);
+  const compositionFacts = {
+    meal_composition_rule:
+      "A meal has exactly one substantial main dish from the master list. " +
+      "A chicken_main is a complete standalone main and must not be paired with " +
+      "another master-list dish. A non-chicken main may be paired only with one " +
+      "active dry_chicken dish. dry_chicken dishes are sides only and never mains.",
+    chicken_main_dishes: chickenMains,
+    non_chicken_main_dishes: nonChickenMains,
+    valid_catalogued_side_dishes: dryChickenSides,
+    light_accompaniments:
+      "Small uncatalogued accompaniments such as salad, raita, or plain curd are " +
+      "fine, but they are not a second main dish."
+  };
+  if (!menu) return { menu_available: false, ...compositionFacts };
   const scheduledDayNames = ["Monday", "Tuesday", "Thursday", "Friday", "Saturday"];
   const scheduledDays = scheduledDayNames.map((day) =>
     menu.days.find((entry) => entry.day === day)
   );
-  const activeDrySides = dishes
-    .filter((dish) => dish.active && dish.category === "dry_chicken")
-    .map((dish) => dish.name);
+  const activeDrySides = dryChickenSides;
   const usedDrySides = menu.days
     .map((entry) => entry.side_chicken)
     .filter(Boolean);
@@ -41,8 +64,11 @@ export function buildMenuFacts(menu, dishes) {
   );
   return {
     menu_available: true,
+    ...compositionFacts,
     side_allocation_rule:
-      "Chicken-main days must not have a chicken side. Every other day should have an active dry-chicken side. A side may repeat during the week, but not on consecutive scheduled meal days.",
+      "Chicken-main days have no catalogued side. Every other day should have one " +
+      "active dry-chicken side. A side may repeat during the week, but not on " +
+      "consecutive scheduled meal days.",
     active_dry_chicken_sides: activeDrySides,
     used_dry_chicken_sides: usedDrySides,
     eligible_days_without_a_side: uncoveredEligibleDays,

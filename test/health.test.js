@@ -3,21 +3,21 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createHealthSnapshot } from "../src/health.js";
 
-test("package and lockfile versions remain aligned at 1.0.0", async () => {
+test("package and lockfile versions remain aligned at 1.0.1", async () => {
   const packageJson = JSON.parse(
     await readFile(new URL("../package.json", import.meta.url), "utf8")
   );
   const packageLock = JSON.parse(
     await readFile(new URL("../package-lock.json", import.meta.url), "utf8")
   );
-  assert.equal(packageJson.version, "1.0.0");
-  assert.equal(packageLock.version, "1.0.0");
-  assert.equal(packageLock.packages[""].version, "1.0.0");
+  assert.equal(packageJson.version, "1.0.1");
+  assert.equal(packageLock.version, "1.0.1");
+  assert.equal(packageLock.packages[""].version, "1.0.1");
 });
 
 test("health snapshot exposes public-safe operational metadata", () => {
   const snapshot = createHealthSnapshot({
-    version: "1.0.0",
+    version: "1.0.1",
     startedAt: new Date("2026-07-23T10:00:00.000Z"),
     now: new Date("2026-07-23T10:02:03.000Z"),
     uptimeSeconds: 123.9,
@@ -42,7 +42,7 @@ test("health snapshot exposes public-safe operational metadata", () => {
   assert.deepEqual(snapshot, {
     status: "ok",
     service: "heisenberg",
-    version: "1.0.0",
+    version: "1.0.1",
     timestamp: "2026-07-23T10:02:03.000Z",
     started_at: "2026-07-23T10:00:00.000Z",
     uptime_seconds: 123,
@@ -67,7 +67,7 @@ test("health snapshot exposes public-safe operational metadata", () => {
 
 test("health snapshot reports startup and failure states", () => {
   const base = {
-    version: "1.0.0",
+    version: "1.0.1",
     startedAt: new Date("2026-07-23T10:00:00.000Z"),
     now: new Date("2026-07-23T10:00:01.000Z"),
     uptimeSeconds: 1,

@@ -94,7 +94,7 @@ Keep the token secret. If it is exposed, revoke it with BotFather and create a r
 2. In [Railway](https://railway.com), create a project from that GitHub repository.
 3. Generate separate production secrets for `API_BEARER_TOKEN` and `MCP_BEARER_TOKEN` with `openssl rand -hex 32`.
 4. In the service’s **Variables**, add every value from `.env.example` except `PORT`, which Railway supplies. Store bearer tokens only as Railway secrets and in clients that need access.
-5. Generate a domain for the service and verify `/health` returns HTTP 200 with `"status":"ok"`, `"version":"1.0.0"`, and healthy component states. Telegram may report `"disabled"` only in a deliberately bot-free environment.
+5. Generate a domain for the service and verify `/health` returns HTTP 200 with `"status":"ok"`, the current package version, and healthy component states. Telegram may report `"disabled"` only in a deliberately bot-free environment.
 6. Railway deploys every push to the connected production branch.
 7. Mount a Railway Volume at `/app/src/data` so menus, preferences, dishes, memories, and conversations survive deployments.
 8. Use `/backup` in Telegram periodically to download `dishes.json`, `menus.json`, and `preferences.json`. Personal memories are intentionally excluded from the group-level backup.

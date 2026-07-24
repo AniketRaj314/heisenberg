@@ -67,7 +67,7 @@ app.get("/health", (_request, response) =>
     })
   )
 );
-mountMcpServer(app);
+mountMcpServer(app, packageMetadata.version);
 components.mcp = "healthy";
 app.use("/api", requireBearerToken(apiBearerToken, "heisenberg-api"));
 app.get("/api", (_request, response) => {

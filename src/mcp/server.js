@@ -15,8 +15,8 @@ function result(value) {
   };
 }
 
-function createServer() {
-  const server = new McpServer({ name: "heisenberg", version: "1.0.0" });
+function createServer(version) {
+  const server = new McpServer({ name: "heisenberg", version });
   const register = (name, description, inputSchema, handler) => {
     server.registerTool(name, { description, inputSchema }, async (args) => {
       try {
@@ -131,7 +131,7 @@ function createServer() {
   return server;
 }
 
-export function mountMcpServer(app) {
+export function mountMcpServer(app, version) {
   const bearerToken = process.env.MCP_BEARER_TOKEN;
   if (!bearerToken) {
     throw new Error("MCP_BEARER_TOKEN is required; refusing to start an unauthenticated MCP server.");
@@ -143,7 +143,7 @@ export function mountMcpServer(app) {
   );
   app.use("/mcp", express.json({ limit: "32kb" }));
   app.post("/mcp", async (request, response) => {
-    const server = createServer();
+    const server = createServer(version);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined
     });

@@ -39,6 +39,24 @@ test("menu facts expose valid non-consecutive side choices", () => {
   assert.match(facts.side_allocation_rule, /not on consecutive scheduled meal days/);
 });
 
+test("meal composition facts prevent two main dishes in ad-hoc recommendations", () => {
+  const dishes = [
+    { name: "Chicken Curry", category: "chicken_main", active: true },
+    { name: "Aloo Gobi", category: "sabzi", active: true },
+    { name: "Palak Paneer", category: "paneer_main", active: true },
+    { name: "Lemon Chicken", category: "dry_chicken", active: true },
+    { name: "Disabled Side", category: "dry_chicken", active: false }
+  ];
+  const facts = buildMenuFacts(null, dishes);
+
+  assert.equal(facts.menu_available, false);
+  assert.deepEqual(facts.chicken_main_dishes, ["Chicken Curry"]);
+  assert.deepEqual(facts.non_chicken_main_dishes, ["Aloo Gobi", "Palak Paneer"]);
+  assert.deepEqual(facts.valid_catalogued_side_dishes, ["Lemon Chicken"]);
+  assert.match(facts.meal_composition_rule, /exactly one substantial main dish/);
+  assert.match(facts.meal_composition_rule, /chicken_main is a complete standalone main/);
+});
+
 test("group messages trigger only for this bot, replies to it, or commands", () => {
   const botInfo = { id: 42, username: "heisenberg_chef_bot" };
   assert.equal(

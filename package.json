@@ -1,6 +1,6 @@
 {
   "name": "heisenberg",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AI-assisted weekly meal planner with Telegram and MCP integrations.",
   "type": "module",
   "main": "index.js",
