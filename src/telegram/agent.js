@@ -1,12 +1,14 @@
 import OpenAI from "openai";
 import {
   getConversationHistory,
+  getMealHistory,
   getPreferences,
   searchContext,
   saveConversation
 } from "../db/store.js";
 import { AGENT_SYSTEM_PROMPT } from "../prompts/agent_system.js";
 import { executeTool, toolDefinitions } from "../mcp/tools.js";
+import { localDateISO } from "../time.js";
 
 export function buildMenuFacts(menu, dishes) {
   const activeDishes = dishes.filter((dish) => dish.active);
@@ -114,7 +116,7 @@ export async function runAgent(userMessage, telegramSender = {}) {
   if (currentSender.telegram_user_id !== "unknown") {
     memoryScopes.push(`person:${currentSender.telegram_user_id}`);
   }
-  const [history, currentMenu, preferences, dishes, relevantMemories] = await Promise.all([
+  const [history, currentMenu, preferences, dishes, relevantMemories, recentMeals] = await Promise.all([
     getConversationHistory(10),
     executeTool("get_current_menu"),
     getPreferences(),
@@ -123,7 +125,8 @@ export async function runAgent(userMessage, telegramSender = {}) {
       scopes: memoryScopes,
       query: userMessage,
       limit: 12
-    })
+    }),
+    getMealHistory({ scopes: memoryScopes, limit: 30 })
   ]);
   const client = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -131,6 +134,8 @@ export async function runAgent(userMessage, telegramSender = {}) {
     maxRetries: 2
   });
   const menuFacts = buildMenuFacts(currentMenu, dishes);
+  const timeZone = process.env.TZ || "Asia/Kolkata";
+  const localDate = localDateISO(new Date(), timeZone);
   const messages = [
     {
       role: "system",
@@ -141,6 +146,11 @@ export async function runAgent(userMessage, telegramSender = {}) {
         `\n\nMASTER DISH LIST:\n${JSON.stringify(dishes)}` +
         `\n\nDETERMINISTIC MENU FACTS:\n${JSON.stringify(menuFacts)}` +
         `\n\nCURRENT SENDER:\n${JSON.stringify(currentSender)}` +
+        `\n\nCURRENT LOCAL DATE AND TIMEZONE:\n${JSON.stringify({
+          date: localDate,
+          time_zone: timeZone
+        })}` +
+        `\n\nRECENT ACTUAL MEALS:\n${JSON.stringify(recentMeals)}` +
         `\n\nRELEVANT DURABLE MEMORIES:\n${JSON.stringify(relevantMemories)}`
     },
     ...history.flatMap((item) => [

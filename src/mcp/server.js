@@ -104,6 +104,34 @@ function createServer(version) {
     (args) => executeTool("get_menu_history", args)
   );
   register(
+    "record_meal",
+    "Record a household dinner that was explicitly reported as actually eaten. " +
+      "Creates or updates the record for that date; never use for a suggestion or future plan.",
+    {
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      scope: z.literal("household").default("household"),
+      main_dish: z.string().min(1).nullable().optional(),
+      side_chicken: z.string().min(1).nullable().optional(),
+      notes: z.string().min(1).max(1000).nullable().optional()
+    },
+    (args) => executeTool("record_meal", args, { source: "mcp" })
+  );
+  register(
+    "get_meal_history",
+    "Get household meals that were actually eaten, newest first.",
+    {
+      scope: z.literal("household").default("household"),
+      limit: z.number().int().min(1).max(100).default(30)
+    },
+    (args) => executeTool("get_meal_history", args, { source: "mcp" })
+  );
+  register(
+    "forget_meal",
+    "Delete an incorrect household meal-history record.",
+    { meal_id: z.string().uuid() },
+    (args) => executeTool("forget_meal", args, { source: "mcp" })
+  );
+  register(
     "remember_context",
     "Save durable free-form household context. MCP calls do not have a Telegram identity, so only household scope is available.",
     {

@@ -20,7 +20,8 @@ const files = {
   menus: path.join(DATA_DIR, "menus.json"),
   preferences: path.join(DATA_DIR, "preferences.json"),
   conversations: path.join(DATA_DIR, "conversations.json"),
-  memories: path.join(DATA_DIR, "memories.json")
+  memories: path.join(DATA_DIR, "memories.json"),
+  mealHistory: path.join(DATA_DIR, "meal_history.json")
 };
 
 const defaults = {
@@ -36,7 +37,8 @@ const defaults = {
     }
   },
   conversations: { conversations: [] },
-  memories: { memories: [] }
+  memories: { memories: [] },
+  mealHistory: { meals: [] }
 };
 
 const dbs = {};
@@ -73,6 +75,34 @@ const MemorySearchSchema = z.object({
   ).min(1).max(10),
   query: z.string().trim().max(1000).default(""),
   limit: z.number().int().min(1).max(50).default(10)
+}).strict();
+
+const MealRecordSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(
+    (value) => {
+      const parsed = new Date(`${value}T00:00:00Z`);
+      return !Number.isNaN(parsed.valueOf()) &&
+        parsed.toISOString().slice(0, 10) === value;
+    },
+    { message: "date must be a real calendar date" }
+  ),
+  scope: z.string().regex(/^(household|person:[A-Za-z0-9_-]{1,100})$/),
+  main_dish: z.string().trim().min(1).max(200).nullable().optional(),
+  side_chicken: z.string().trim().min(1).max(200).nullable().optional(),
+  notes: z.string().trim().min(1).max(1000).nullable().optional(),
+  source: z.string().trim().min(1).max(100).default("agent"),
+  recordedBy: z.string().trim().min(1).max(100).nullable().default(null)
+}).strict().refine(
+  ({ main_dish, side_chicken }) =>
+    main_dish !== undefined || side_chicken !== undefined,
+  { message: "At least one consumed dish must be supplied." }
+);
+
+const MealHistoryQuerySchema = z.object({
+  scopes: z.array(
+    z.string().regex(/^(household|person:[A-Za-z0-9_-]{1,100})$/)
+  ).min(1).max(10),
+  limit: z.number().int().min(1).max(100).default(30)
 }).strict();
 
 function withStoreLock(operation) {
@@ -379,6 +409,92 @@ export async function saveConversation(userMessage, assistantResponse, sender = 
     conversationsDb.data.conversations =
       conversationsDb.data.conversations.slice(-100);
     await conversationsDb.write();
+  });
+}
+
+export async function recordMeal(args) {
+  const input = MealRecordSchema.parse(args);
+  return withStoreLock(async () => {
+    const mealsDb = db("mealHistory");
+    await mealsDb.read();
+    const existing = mealsDb.data.meals.find(
+      (meal) => meal.date === input.date && meal.scope === input.scope
+    );
+    const now = new Date().toISOString();
+    if (existing) {
+      const nextMain =
+        input.main_dish !== undefined ? input.main_dish : existing.main_dish;
+      const nextSide =
+        input.side_chicken !== undefined
+          ? input.side_chicken
+          : existing.side_chicken;
+      if (!nextMain && !nextSide) {
+        throw new Error("A meal record needs at least one consumed dish.");
+      }
+      existing.main_dish = nextMain;
+      existing.side_chicken = nextSide;
+      if (input.notes !== undefined) existing.notes = input.notes;
+      existing.source = input.source;
+      existing.recorded_by = input.recordedBy;
+      existing.updated_at = now;
+      await mealsDb.write();
+      return structuredClone(existing);
+    }
+    if (!input.main_dish && !input.side_chicken) {
+      throw new Error("A new meal record needs at least one consumed dish.");
+    }
+    const meal = {
+      id: randomUUID(),
+      date: input.date,
+      scope: input.scope,
+      main_dish: input.main_dish ?? null,
+      side_chicken: input.side_chicken ?? null,
+      notes: input.notes ?? null,
+      source: input.source,
+      recorded_by: input.recordedBy,
+      created_at: now,
+      updated_at: now
+    };
+    mealsDb.data.meals.push(meal);
+    mealsDb.data.meals = mealsDb.data.meals.slice(-1000);
+    await mealsDb.write();
+    return structuredClone(meal);
+  });
+}
+
+export async function getMealHistory(args) {
+  const input = MealHistoryQuerySchema.parse(args);
+  return withStoreLock(async () => {
+    const mealsDb = db("mealHistory");
+    await mealsDb.read();
+    return structuredClone(
+      mealsDb.data.meals
+        .filter((meal) => input.scopes.includes(meal.scope))
+        .sort(
+          (a, b) =>
+            b.date.localeCompare(a.date) ||
+            b.updated_at.localeCompare(a.updated_at)
+        )
+        .slice(0, input.limit)
+    );
+  });
+}
+
+export async function forgetMeal(id, allowedScopes) {
+  const mealId = z.string().uuid().parse(id);
+  const scopes = z.array(
+    z.string().regex(/^(household|person:[A-Za-z0-9_-]{1,100})$/)
+  ).min(1).parse(allowedScopes);
+  return withStoreLock(async () => {
+    const mealsDb = db("mealHistory");
+    await mealsDb.read();
+    const index = mealsDb.data.meals.findIndex(
+      (meal) => meal.id === mealId && scopes.includes(meal.scope)
+    );
+    if (index < 0) throw new Error("Meal not found in an accessible scope.");
+    const [removed] = mealsDb.data.meals.splice(index, 1);
+    await mealsDb.write();
+    return structuredClone(removed);
   });
 }
 

@@ -1,4 +1,10 @@
-export function buildMenuGenerationPrompt({ weekStart, dishes, preferences, recentMenus }) {
+export function buildMenuGenerationPrompt({
+  weekStart,
+  dishes,
+  preferences,
+  recentMenus,
+  recentMeals = []
+}) {
   return `Create the weekly dinner menu for a household of two.
 
 The user is pre-diabetic, limits rotis to one, prioritises protein, and avoids high-GI meals as a daily habit. His brother has no dietary restrictions and prefers weight-loss-friendly meals.
@@ -13,6 +19,9 @@ ${JSON.stringify(preferences)}
 
 RECENT MENUS (newest history may be relevant for rotation):
 ${JSON.stringify(recentMenus)}
+
+RECENT ACTUAL MEALS (including ad-hoc meals outside an active menu):
+${JSON.stringify(recentMeals)}
 
 GUARDRAILS:
 - Return exactly Monday, Tuesday, Thursday, Friday, Saturday.
@@ -33,6 +42,7 @@ GUARDRAILS:
 - Dry-chicken sides may repeat within the week, but the same side must not appear on consecutive scheduled meal days. Do not invent a side.
 - Respect needs_overnight_marination: add a prior-day prep note when Tandoori Chicken is used.
 - Avoid main dishes used in the last ${preferences.cross_week_avoid_last_n_weeks ?? 3} weeks unless the available rotation is exhausted.
+- Use RECENT ACTUAL MEALS to avoid unnecessarily repeating mains or chicken sides eaten on recent consecutive dates.
 - Treat every entry in preferences.custom_rules as mandatory.
 - Days are dynamic; do not fix a slot to a particular weekday.
 

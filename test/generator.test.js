@@ -9,6 +9,7 @@ import { getCatchUpWeekStart } from "../src/scheduler/cron.js";
 import { bearerTokenMatches } from "../src/auth/bearer.js";
 import { parsePreferenceUpdate } from "../src/domain/preferences.js";
 import { createRateLimiter } from "../src/security/rateLimit.js";
+import { localDateISO } from "../src/time.js";
 
 const dishes = [
   ["Whole Wheat Hakka Noodles", "carb_heavy"],
@@ -23,6 +24,12 @@ const dishes = [
 
 test("getMonday returns the next Monday for a Friday", () => {
   assert.equal(getMonday(0, new Date("2026-07-24T12:30:00Z")), "2026-07-27");
+});
+
+test("local date resolution respects the configured household timezone", () => {
+  const instant = new Date("2026-07-23T20:00:00Z");
+  assert.equal(localDateISO(instant, "UTC"), "2026-07-23");
+  assert.equal(localDateISO(instant, "Asia/Kolkata"), "2026-07-24");
 });
 
 test("valid menu passes guardrail validation", () => {

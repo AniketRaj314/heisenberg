@@ -124,12 +124,36 @@ export async function startTelegramBot() {
     });
   });
 
+  bot.command("meals", async (ctx) => {
+    const actor = normalizeTelegramSender(ctx.from);
+    const meals = await executeTool(
+      "get_meal_history",
+      { scope: "all", limit: 14 },
+      { actor, source: "telegram-command" }
+    );
+    if (!meals.length) {
+      await replyToMessage(ctx, "No actual meals have been logged yet.");
+      return;
+    }
+    const text = meals
+      .map((meal) => {
+        const scope = meal.scope === "household" ? "household" : "personal";
+        const dishes = [
+          meal.main_dish && `main: ${meal.main_dish}`,
+          meal.side_chicken && `chicken side: ${meal.side_chicken}`
+        ].filter(Boolean);
+        return `${meal.date} · ${scope}\n${dishes.join("\n")}`;
+      })
+      .join("\n\n");
+    await sendLongMessage(ctx, text);
+  });
+
   bot.command("backup", async (ctx) => {
     const files = getDataFiles();
-    for (const name of ["dishes", "menus", "preferences"]) {
+    for (const name of ["dishes", "menus", "preferences", "mealHistory"]) {
       await ctx.replyWithDocument(Input.fromLocalFile(files[name]), {
         ...linkedReplyOptions(ctx),
-        caption: `${name}.json`
+        caption: name === "mealHistory" ? "meal_history.json" : `${name}.json`
       });
     }
   });
@@ -178,12 +202,13 @@ export async function startTelegramBot() {
         "/generate — generate next week's draft",
         "/confirm — make the newest draft active",
         "/dishes — list all dishes by category",
+        "/meals — show recently logged meals that were actually eaten",
         "/memory — list shared and personal durable memories",
         "/forget <memory-id> — delete an accessible memory",
         "/backup — download the important JSON data files",
         "/help — show this help",
         "",
-        "You can also message me naturally to change menus, dishes, preferences, or memories."
+        "You can also message me naturally to change menus, dishes, preferences, memories, or actual meal history."
       ].join("\n")
     );
   });

@@ -6,10 +6,11 @@ Heisenberg is an AI-assisted weekly meal planner—because he was *the cook*. It
 
 - Generates Monday, Tuesday, Thursday, Friday, and Saturday menus at 6:00 PM IST every Friday.
 - Validates generated menus against dish categories and household guardrails before saving them.
+- Keeps dated history for meals that were actually eaten, including ad-hoc midweek meals outside an active menu.
 - Stores dishes, menus, preferences, durable scoped memories, and the last 100 conversations with lowdb.
 - Runs a dedicated Telegram bot in a dedicated Telegram group.
 - Exposes the same operations as authenticated MCP tools at `/mcp`.
-- Supports Telegram commands: `/menu`, `/generate`, `/confirm`, `/dishes`, `/memory`, `/forget`, `/backup`, and `/help`.
+- Supports Telegram commands: `/menu`, `/generate`, `/confirm`, `/dishes`, `/meals`, `/memory`, `/forget`, `/backup`, and `/help`.
 - Lets the Telegram agent add, rename, recategorise, retag, enable, and disable dishes, then apply routine menu changes without an extra confirmation step.
 - In groups, responds only to slash commands, direct `@bot` mentions, or replies to one of its messages; interactive responses are linked to the triggering Telegram message.
 - Tracks each speaker by stable Telegram user ID and stores their display name with conversation history, keeping Aniket and his brother distinct.
@@ -97,7 +98,7 @@ Keep the token secret. If it is exposed, revoke it with BotFather and create a r
 5. Generate a domain for the service and verify `/health` returns HTTP 200 with `"status":"ok"`, the current package version, and healthy component states. Telegram may report `"disabled"` only in a deliberately bot-free environment.
 6. Railway deploys every push to the connected production branch.
 7. Mount a Railway Volume at `/app/src/data` so menus, preferences, dishes, memories, and conversations survive deployments.
-8. Use `/backup` in Telegram periodically to download `dishes.json`, `menus.json`, and `preferences.json`. Personal memories are intentionally excluded from the group-level backup.
+8. Use `/backup` in Telegram periodically to download `dishes.json`, `menus.json`, `preferences.json`, and `meal_history.json`. Personal memories are intentionally excluded from the group-level backup.
 
 ### Persistence warning
 

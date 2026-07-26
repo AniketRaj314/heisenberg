@@ -139,6 +139,85 @@ test("conversation history preserves Telegram sender identity", async () => {
   assert.equal(history[0].sender.display_name, "Rahul");
 });
 
+test("actual meal history supports partial facts, corrections, and scopes", async () => {
+  const sideOnly = await store.recordMeal({
+    date: "2026-07-23",
+    scope: "household",
+    side_chicken: "Lemon Pepper Chicken",
+    source: "test",
+    recordedBy: "202"
+  });
+  assert.equal(sideOnly.main_dish, null);
+  assert.equal(sideOnly.side_chicken, "Lemon Pepper Chicken");
+
+  const completed = await store.recordMeal({
+    date: "2026-07-23",
+    scope: "household",
+    main_dish: "Egg Bhurji",
+    source: "test",
+    recordedBy: "101"
+  });
+  assert.equal(completed.id, sideOnly.id);
+  assert.equal(completed.main_dish, "Egg Bhurji");
+  assert.equal(completed.side_chicken, "Lemon Pepper Chicken");
+
+  const personal = await store.recordMeal({
+    date: "2026-07-23",
+    scope: "person:101",
+    main_dish: "Pesto Spaghetti",
+    source: "test",
+    recordedBy: "101"
+  });
+  assert.notEqual(personal.id, completed.id);
+
+  const householdOnly = await store.getMealHistory({
+    scopes: ["household"],
+    limit: 10
+  });
+  assert.deepEqual(householdOnly.map((meal) => meal.id), [completed.id]);
+
+  const visibleToAniket = await store.getMealHistory({
+    scopes: ["household", "person:101"],
+    limit: 10
+  });
+  assert.equal(visibleToAniket.length, 2);
+
+  await assert.rejects(
+    store.forgetMeal(personal.id, ["household"]),
+    /not found in an accessible scope/
+  );
+  const removed = await store.forgetMeal(personal.id, [
+    "household",
+    "person:101"
+  ]);
+  assert.equal(removed.id, personal.id);
+});
+
+test("meal tools bind personal history to the current Telegram sender", async () => {
+  const actor = {
+    telegram_user_id: "505",
+    display_name: "Person 505",
+    username: null
+  };
+  const saved = await executeTool(
+    "record_meal",
+    {
+      date: "2026-07-22",
+      scope: "personal",
+      main_dish: "Chicken Curry"
+    },
+    { actor, source: "test" }
+  );
+  assert.equal(saved.scope, "person:505");
+
+  const visible = await executeTool(
+    "get_meal_history",
+    { scope: "personal", limit: 10 },
+    { actor, source: "test" }
+  );
+  assert.ok(visible.some((meal) => meal.id === saved.id));
+});
+
 test("durable memories are deduplicated, searchable, and scope-isolated", async () => {
   const household = await store.rememberContext({
     scope: "household",

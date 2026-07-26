@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import {
   getDishes,
+  getMealHistory,
   getMenus,
   getPreferences,
   saveMenu
@@ -100,10 +101,11 @@ async function generateMenuInternal({
   notify,
   completionFn
 } = {}) {
-  const [dishes, preferences, allMenus] = await Promise.all([
+  const [dishes, preferences, allMenus, recentMeals] = await Promise.all([
     getDishes({ activeOnly: true }),
     getPreferences(),
-    getMenus()
+    getMenus(),
+    getMealHistory({ scopes: ["household"], limit: 30 })
   ]);
   const recentMenus = allMenus
     .filter((menu) => menu.week_start < weekStart)
@@ -113,7 +115,8 @@ async function generateMenuInternal({
     weekStart,
     dishes,
     preferences,
-    recentMenus
+    recentMenus,
+    recentMeals
   });
 
   const menu = await generateCandidateWithRetries({

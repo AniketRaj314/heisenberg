@@ -2,12 +2,15 @@ import {
   addDish,
   confirmMenu,
   disableDish,
+  forgetMeal,
   forgetContext,
   getDishes,
+  getMealHistory,
   getMenus,
   getPreferences,
   getRelevantMenu,
   modifyMenuDay,
+  recordMeal,
   rememberContext,
   searchContext,
   updateDish,
@@ -108,6 +111,47 @@ export const toolDefinitions = [
     }
   },
   {
+    name: "record_meal",
+    description:
+      "Record food that was explicitly reported as actually eaten on a local calendar date. " +
+      "This creates or updates the one dinner record for that date and scope. Partial facts " +
+      "are allowed, so main_dish or side_chicken may be omitted. Never record a suggestion, " +
+      "future plan, or unconfirmed recommendation.",
+    parameters: {
+      type: "object",
+      properties: {
+        date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        scope: { type: "string", enum: ["personal", "household"] },
+        main_dish: { type: ["string", "null"] },
+        side_chicken: { type: ["string", "null"] },
+        notes: { type: ["string", "null"] }
+      },
+      required: ["date", "scope"]
+    }
+  },
+  {
+    name: "get_meal_history",
+    description:
+      "Get dated meals that were actually eaten, newest first. Use this instead of " +
+      "conversation history when checking recent meal rotation.",
+    parameters: {
+      type: "object",
+      properties: {
+        scope: { type: "string", enum: ["personal", "household", "all"] },
+        limit: { type: "integer", minimum: 1, maximum: 100 }
+      }
+    }
+  },
+  {
+    name: "forget_meal",
+    description: "Delete an incorrect meal-history record by id.",
+    parameters: {
+      type: "object",
+      properties: { meal_id: { type: "string" } },
+      required: ["meal_id"]
+    }
+  },
+  {
     name: "remember_context",
     description:
       "Save a durable free-form fact, soft preference, routine, or household decision. " +
@@ -163,6 +207,12 @@ function accessibleMemoryScopes(context) {
   return scopes;
 }
 
+function mealScope(scope, context) {
+  if (scope === "household") return "household";
+  if (scope === "personal") return personalMemoryScope(context);
+  throw new Error("Meal scope must be personal or household.");
+}
+
 export async function executeTool(name, args = {}, context = {}) {
   switch (name) {
     case "get_current_menu": {
@@ -200,6 +250,34 @@ export async function executeTool(name, args = {}, context = {}) {
         .sort((a, b) => b.week_start.localeCompare(a.week_start))
         .slice(0, args.weeks ?? 4);
     }
+    case "record_meal":
+      return recordMeal({
+        date: args.date,
+        scope: mealScope(args.scope, context),
+        main_dish: args.main_dish,
+        side_chicken: args.side_chicken,
+        notes: args.notes,
+        source: context.source ?? "agent",
+        recordedBy: context.actor?.telegram_user_id ?? null
+      });
+    case "get_meal_history": {
+      if (
+        args.scope !== undefined &&
+        !["personal", "household", "all"].includes(args.scope)
+      ) {
+        throw new Error("Meal-history scope must be personal, household, or all.");
+      }
+      const allScopes = accessibleMemoryScopes(context);
+      const scopes =
+        args.scope === "household"
+          ? ["household"]
+          : args.scope === "personal"
+            ? [personalMemoryScope(context)]
+            : allScopes;
+      return getMealHistory({ scopes, limit: args.limit ?? 30 });
+    }
+    case "forget_meal":
+      return forgetMeal(args.meal_id, accessibleMemoryScopes(context));
     case "remember_context": {
       if (!["personal", "household"].includes(args.scope)) {
         throw new Error("Memory scope must be personal or household.");
