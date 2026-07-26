@@ -1,11 +1,20 @@
 import { z } from "zod";
 import { parseCustomRule } from "./preferences.js";
 
+export const WEEKDAYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday"
+];
 export const MENU_DAYS = ["Monday", "Tuesday", "Thursday", "Friday", "Saturday"];
 export const MENU_SLOTS = ["carb_heavy", "chicken_main", "paneer_main", "sabzi", "random"];
 
 const MenuDaySchema = z.object({
-  day: z.enum(MENU_DAYS),
+  day: z.enum(WEEKDAYS),
   slot_type: z.enum(MENU_SLOTS),
   main_dish: z.string().trim().min(1).max(200),
   side_chicken: z.string().trim().min(1).max(200).nullable(),
@@ -60,7 +69,8 @@ export function validateMenu(
   dishes,
   preferences,
   expectedWeekStart,
-  recentMenus = []
+  recentMenus = [],
+  { requiredDays = MENU_DAYS } = {}
 ) {
   const parsed = MenuDraftSchema.safeParse(menu);
   if (!parsed.success) {
@@ -92,7 +102,14 @@ export function validateMenu(
 
   const days = candidate.days.map((entry) => entry.day);
   const slots = candidate.days.map((entry) => entry.slot_type);
-  if (new Set(days).size !== MENU_DAYS.length || MENU_DAYS.some((day) => !days.includes(day))) {
+  if (new Set(days).size !== candidate.days.length) {
+    errors.push("scheduled weekdays must be unique");
+  }
+  if (
+    requiredDays &&
+    (days.length !== requiredDays.length ||
+      requiredDays.some((day) => !days.includes(day)))
+  ) {
     errors.push("required weekdays must each appear exactly once");
   }
   if (new Set(slots).size !== MENU_SLOTS.length || MENU_SLOTS.some((slot) => !slots.includes(slot))) {
@@ -186,8 +203,8 @@ export function validateMenu(
       }
     }
   }
-  const scheduledDays = MENU_DAYS.map((day) =>
-    candidate.days.find((entry) => entry.day === day)
+  const scheduledDays = [...candidate.days].sort(
+    (a, b) => WEEKDAYS.indexOf(a.day) - WEEKDAYS.indexOf(b.day)
   );
   for (let index = 1; index < scheduledDays.length; index += 1) {
     const previousSide = scheduledDays[index - 1]?.side_chicken;
@@ -200,14 +217,40 @@ export function validateMenu(
     }
   }
 
+  const sideCounts = scheduledDays.reduce((counts, entry) => {
+    if (entry.side_chicken) {
+      counts.set(entry.side_chicken, (counts.get(entry.side_chicken) ?? 0) + 1);
+    }
+    return counts;
+  }, new Map());
+  const unusedSides = [...availableDryChickenNames].filter(
+    (name) => !sideCounts.has(name)
+  );
+  const repeatedSides = [...sideCounts]
+    .filter(([, count]) => count > 1)
+    .map(([name]) => name);
+  const usableUnusedSides = unusedSides.filter((name) =>
+    scheduledDays.some(
+      (entry) =>
+        byName.get(entry.main_dish)?.category !== "chicken_main" &&
+        !(entry.day === "Monday" && name === "Tandoori Chicken")
+    )
+  );
+  if (repeatedSides.length && usableUnusedSides.length) {
+    errors.push(
+      `${repeatedSides.join(", ")} repeats before eligible sides are used: ` +
+      usableUnusedSides.join(", ")
+    );
+  }
+
   const pairIndexes = ["Dosa Chutney", "Sandwich"].map((name) =>
-    candidate.days.findIndex((entry) => entry.main_dish === name)
+    scheduledDays.findIndex((entry) => entry.main_dish === name)
   );
   if (pairIndexes.some((index) => index >= 0)) {
     if (pairIndexes.some((index) => index < 0) || Math.abs(pairIndexes[0] - pairIndexes[1]) !== 1) {
       errors.push("Dosa Chutney and Sandwich must occur together on adjacent scheduled days");
     } else {
-      const pairNotes = pairIndexes.map((index) => candidate.days[index].prep_notes).join(" ");
+      const pairNotes = pairIndexes.map((index) => scheduledDays[index].prep_notes).join(" ");
       if (!mentionsSharedMasalaAloo(pairNotes)) {
         errors.push("Dosa Chutney and Sandwich need a prep note about shared masala aloo");
       }

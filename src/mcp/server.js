@@ -89,13 +89,33 @@ function createServer(version) {
     "Modify fields for a day in the latest menu.",
     {
       menu_id: z.string().uuid().optional(),
-      day: z.enum(["Monday", "Tuesday", "Thursday", "Friday", "Saturday"]),
+      day: z.enum(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]),
       main_dish: z.string().optional(),
       side_chicken: z.string().nullable().optional(),
       prep_notes: z.string().optional(),
       cook_notes: z.string().optional()
     },
     (args) => executeTool("modify_menu_day", args)
+  );
+  register(
+    "swap_menu_days",
+    "Atomically swap the complete meals assigned to two scheduled weekdays.",
+    {
+      menu_id: z.string().uuid().optional(),
+      first_day: z.enum(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]),
+      second_day: z.enum(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+    },
+    (args) => executeTool("swap_menu_days", args)
+  );
+  register(
+    "move_menu_day",
+    "Move a complete scheduled meal to an unscheduled weekday without regenerating.",
+    {
+      menu_id: z.string().uuid().optional(),
+      from_day: z.enum(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]),
+      to_day: z.enum(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+    },
+    (args) => executeTool("move_menu_day", args)
   );
   register(
     "get_menu_history",

@@ -1,3 +1,5 @@
+import { WEEKDAYS } from "../domain/menu.js";
+
 export function formatMenu(menu) {
   if (!menu) return "No menu is available yet.";
   const lines = [
@@ -5,7 +7,10 @@ export function formatMenu(menu) {
     `Status: ${menu.status}`,
     ""
   ];
-  for (const entry of menu.days) {
+  const scheduledDays = [...menu.days].sort(
+    (a, b) => WEEKDAYS.indexOf(a.day) - WEEKDAYS.indexOf(b.day)
+  );
+  for (const entry of scheduledDays) {
     lines.push(`*${entry.day}* · ${entry.slot_type.replaceAll("_", " ")}`);
     lines.push(`Main: ${entry.main_dish}`);
     if (entry.side_chicken) lines.push(`Side: ${entry.side_chicken}`);

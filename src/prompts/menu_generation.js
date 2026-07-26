@@ -3,7 +3,8 @@ export function buildMenuGenerationPrompt({
   dishes,
   preferences,
   recentMenus,
-  recentMeals = []
+  recentMeals = [],
+  previousDraft = null
 }) {
   return `Create the weekly dinner menu for a household of two.
 
@@ -23,6 +24,9 @@ ${JSON.stringify(recentMenus)}
 RECENT ACTUAL MEALS (including ad-hoc meals outside an active menu):
 ${JSON.stringify(recentMeals)}
 
+CURRENT DRAFT BEING REPLACED:
+${JSON.stringify(previousDraft)}
+
 GUARDRAILS:
 - Return exactly Monday, Tuesday, Thursday, Friday, Saturday.
 - Assign each slot_type exactly once: carb_heavy, chicken_main, paneer_main, sabzi, random.
@@ -39,10 +43,12 @@ GUARDRAILS:
 - Assign exactly one dry_chicken side on every day except chicken_main day.
 - A chicken_main is complete on its own and must have side_chicken set to null.
 - Only a dry_chicken dish is valid in side_chicken; never use a sabzi, paneer_main, carb_heavy, or chicken_main as a side.
+- Use every eligible active dry_chicken side before repeating one. If repeats are necessary, distribute them as evenly as possible.
 - Dry-chicken sides may repeat within the week, but the same side must not appear on consecutive scheduled meal days. Do not invent a side.
 - Respect needs_overnight_marination: add a prior-day prep note when Tandoori Chicken is used.
 - Avoid main dishes used in the last ${preferences.cross_week_avoid_last_n_weeks ?? 3} weeks unless the available rotation is exhausted.
 - Use RECENT ACTUAL MEALS to avoid unnecessarily repeating mains or chicken sides eaten on recent consecutive dates.
+- When CURRENT DRAFT BEING REPLACED is present, this is a genuine regeneration: choose new main dishes rather than returning or merely reshuffling the same menu. Change at least three of the five mains when eligible alternatives exist.
 - Treat every entry in preferences.custom_rules as mandatory.
 - Days are dynamic; do not fix a slot to a particular weekday.
 

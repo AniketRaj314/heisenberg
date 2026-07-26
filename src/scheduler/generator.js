@@ -75,6 +75,7 @@ export async function generateCandidateWithRetries({
   dishes,
   preferences,
   recentMenus,
+  previousDraft = null,
   weekStart,
   completionFn = createCompletion,
   attempts = 3
@@ -88,12 +89,57 @@ export async function generateCandidateWithRetries({
     try {
       menu = await completionFn(prompt, correction);
       errors = validateMenu(menu, dishes, preferences, weekStart, recentMenus);
+      errors.push(
+        ...validateRegenerationDiversity(
+          menu,
+          previousDraft,
+          dishes,
+          preferences
+        )
+      );
       if (!errors.length) return menu;
     } catch (error) {
       errors = [`attempt ${attempt + 1} failed: ${error.message}`];
     }
   }
   throw new Error(`AI menu failed validation: ${errors.join("; ")}`);
+}
+
+export function validateRegenerationDiversity(
+  candidate,
+  previousDraft,
+  dishes,
+  preferences
+) {
+  if (!previousDraft?.days?.length || !candidate?.days?.length) return [];
+  const previousMainNames = new Set(
+    previousDraft.days.map((entry) => entry.main_dish)
+  );
+  const banned = [
+    ...(preferences.never_use ?? []),
+    ...(preferences.custom_rules ?? [])
+      .filter((rule) => String(rule).toLowerCase().startsWith("never:"))
+      .map((rule) => String(rule).slice("never:".length))
+  ].map((term) => term.trim().toLowerCase());
+  const active = dishes.filter((dish) => dish.active);
+  const changeableSlots = previousDraft.days.filter((entry) =>
+    active.some(
+      (dish) =>
+        dish.category !== "dry_chicken" &&
+        !previousMainNames.has(dish.name) &&
+        (entry.slot_type === "random" || dish.category === entry.slot_type) &&
+        !banned.some((term) => dish.name.toLowerCase().includes(term))
+    )
+  ).length;
+  const requiredChanges = Math.min(3, changeableSlots);
+  const actualChanges = candidate.days.filter(
+    (entry) => !previousMainNames.has(entry.main_dish)
+  ).length;
+  if (actualChanges >= requiredChanges) return [];
+  return [
+    `regeneration changes only ${actualChanges} main dish(es); at least ` +
+    `${requiredChanges} must differ from the draft being replaced`
+  ];
 }
 
 async function generateMenuInternal({
@@ -111,12 +157,21 @@ async function generateMenuInternal({
     .filter((menu) => menu.week_start < weekStart)
     .sort((a, b) => b.week_start.localeCompare(a.week_start))
     .slice(0, Math.max(4, preferences.cross_week_avoid_last_n_weeks ?? 0));
+  const previousDraft =
+    allMenus
+      .filter(
+        (menu) =>
+          menu.week_start === weekStart &&
+          menu.status === "draft"
+      )
+      .sort((a, b) => b.generated_at.localeCompare(a.generated_at))[0] ?? null;
   const prompt = buildMenuGenerationPrompt({
     weekStart,
     dishes,
     preferences,
     recentMenus,
-    recentMeals
+    recentMeals,
+    previousDraft
   });
 
   const menu = await generateCandidateWithRetries({
@@ -124,6 +179,7 @@ async function generateMenuInternal({
     dishes,
     preferences,
     recentMenus,
+    previousDraft,
     weekStart,
     completionFn
   });

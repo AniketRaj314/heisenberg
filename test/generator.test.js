@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   generateCandidateWithRetries,
   getMonday,
+  validateRegenerationDiversity,
   validateMenu
 } from "../src/scheduler/generator.js";
 import { getCatchUpWeekStart } from "../src/scheduler/cron.js";
@@ -102,6 +103,67 @@ test("dry chicken sides may repeat, but not on consecutive scheduled days", () =
   );
 });
 
+test("generation uses every eligible dry chicken side before repeating one", () => {
+  const dishesWithExtraSide = [
+    ...dishes,
+    {
+      name: "Garlic Herb Chicken",
+      category: "dry_chicken",
+      active: true,
+      tags: []
+    }
+  ];
+  const menu = {
+    week_start: "2026-07-27",
+    days: [
+      { day: "Monday", slot_type: "carb_heavy", main_dish: "Whole Wheat Hakka Noodles", side_chicken: "Lemon Pepper Chicken", prep_notes: "", cook_notes: "" },
+      { day: "Tuesday", slot_type: "chicken_main", main_dish: "Chicken Curry", side_chicken: null, prep_notes: "", cook_notes: "" },
+      { day: "Thursday", slot_type: "paneer_main", main_dish: "Palak Paneer", side_chicken: "Tandoori Chicken", prep_notes: "Marinate Tandoori Chicken overnight before Thursday.", cook_notes: "" },
+      { day: "Friday", slot_type: "sabzi", main_dish: "Egg Curry", side_chicken: "Cajun Chicken", prep_notes: "", cook_notes: "" },
+      { day: "Saturday", slot_type: "random", main_dish: "Egg Bhurji", side_chicken: "Lemon Pepper Chicken", prep_notes: "", cook_notes: "" }
+    ]
+  };
+  const errors = validateMenu(
+    menu,
+    dishesWithExtraSide,
+    {
+      never_use: ["bhindi"],
+      max_paneer_per_week: 1,
+      max_carb_heavy_per_week: 1,
+      cross_week_avoid_last_n_weeks: 3,
+      custom_rules: []
+    },
+    "2026-07-27"
+  );
+  assert.ok(errors.some((error) => /repeats before eligible sides are used/.test(error)));
+});
+
+test("generated menus still require the default weekdays", () => {
+  const menu = {
+    week_start: "2026-07-27",
+    days: [
+      { day: "Monday", slot_type: "carb_heavy", main_dish: "Whole Wheat Hakka Noodles", side_chicken: "Lemon Pepper Chicken", prep_notes: "", cook_notes: "" },
+      { day: "Tuesday", slot_type: "chicken_main", main_dish: "Chicken Curry", side_chicken: null, prep_notes: "", cook_notes: "" },
+      { day: "Wednesday", slot_type: "paneer_main", main_dish: "Palak Paneer", side_chicken: "Tandoori Chicken", prep_notes: "Marinate Tandoori Chicken overnight before Wednesday.", cook_notes: "" },
+      { day: "Friday", slot_type: "sabzi", main_dish: "Egg Curry", side_chicken: "Cajun Chicken", prep_notes: "", cook_notes: "" },
+      { day: "Saturday", slot_type: "random", main_dish: "Egg Bhurji", side_chicken: "Lemon Pepper Chicken", prep_notes: "", cook_notes: "" }
+    ]
+  };
+  const errors = validateMenu(
+    menu,
+    dishes,
+    {
+      never_use: ["bhindi"],
+      max_paneer_per_week: 1,
+      max_carb_heavy_per_week: 1,
+      cross_week_avoid_last_n_weeks: 3,
+      custom_rules: []
+    },
+    "2026-07-27"
+  );
+  assert.ok(errors.some((error) => /required weekdays/.test(error)));
+});
+
 test("MCP bearer authentication accepts only an exact Bearer token", () => {
   assert.equal(bearerTokenMatches("Bearer correct-secret", "correct-secret"), true);
   assert.equal(bearerTokenMatches("bearer correct-secret", "correct-secret"), true);
@@ -152,6 +214,72 @@ test("generation retries a failed completion and returns a validated candidate",
   });
   assert.equal(calls, 2);
   assert.deepEqual(result, validMenu);
+});
+
+test("regeneration rejects a near-duplicate draft when alternatives exist", async () => {
+  const expandedDishes = [
+    ...dishes,
+    ["Pesto Spaghetti", "carb_heavy"],
+    ["Chicken Chilli", "chicken_main"],
+    ["Paneer Sauté", "paneer_main"],
+    ["Aloo Gobi Capsicum Masala", "sabzi"]
+  ].map((dish) =>
+    Array.isArray(dish)
+      ? { name: dish[0], category: dish[1], active: true }
+      : dish
+  );
+  const previousDraft = {
+    week_start: "2026-07-27",
+    days: [
+      { day: "Monday", slot_type: "carb_heavy", main_dish: "Whole Wheat Hakka Noodles", side_chicken: "Lemon Pepper Chicken", prep_notes: "", cook_notes: "" },
+      { day: "Tuesday", slot_type: "chicken_main", main_dish: "Chicken Curry", side_chicken: null, prep_notes: "Marinate Tandoori Chicken overnight for Thursday.", cook_notes: "" },
+      { day: "Thursday", slot_type: "paneer_main", main_dish: "Palak Paneer", side_chicken: "Tandoori Chicken", prep_notes: "", cook_notes: "" },
+      { day: "Friday", slot_type: "sabzi", main_dish: "Egg Curry", side_chicken: "Cajun Chicken", prep_notes: "", cook_notes: "" },
+      { day: "Saturday", slot_type: "random", main_dish: "Egg Bhurji", side_chicken: "Lemon Pepper Chicken", prep_notes: "", cook_notes: "" }
+    ]
+  };
+  const replacement = {
+    week_start: "2026-07-27",
+    days: [
+      { day: "Monday", slot_type: "carb_heavy", main_dish: "Pesto Spaghetti", side_chicken: "Lemon Pepper Chicken", prep_notes: "", cook_notes: "" },
+      { day: "Tuesday", slot_type: "chicken_main", main_dish: "Chicken Chilli", side_chicken: null, prep_notes: "Marinate Tandoori Chicken overnight for Thursday.", cook_notes: "" },
+      { day: "Thursday", slot_type: "paneer_main", main_dish: "Paneer Sauté", side_chicken: "Tandoori Chicken", prep_notes: "", cook_notes: "" },
+      { day: "Friday", slot_type: "sabzi", main_dish: "Aloo Gobi Capsicum Masala", side_chicken: "Cajun Chicken", prep_notes: "", cook_notes: "" },
+      { day: "Saturday", slot_type: "random", main_dish: "Egg Curry", side_chicken: "Lemon Pepper Chicken", prep_notes: "", cook_notes: "" }
+    ]
+  };
+  const preferences = {
+    never_use: ["bhindi"],
+    max_paneer_per_week: 1,
+    max_carb_heavy_per_week: 1,
+    cross_week_avoid_last_n_weeks: 3,
+    custom_rules: []
+  };
+  assert.match(
+    validateRegenerationDiversity(
+      previousDraft,
+      previousDraft,
+      expandedDishes,
+      preferences
+    )[0],
+    /at least 3 must differ/
+  );
+
+  let calls = 0;
+  const result = await generateCandidateWithRetries({
+    prompt: "regenerate",
+    dishes: expandedDishes,
+    preferences,
+    recentMenus: [],
+    previousDraft,
+    weekStart: "2026-07-27",
+    completionFn: async () => {
+      calls += 1;
+      return calls === 1 ? previousDraft : replacement;
+    }
+  });
+  assert.equal(calls, 2);
+  assert.deepEqual(result, replacement);
 });
 
 test("scheduler catch-up targets missed weeks without generating late-week menus", () => {

@@ -73,6 +73,49 @@ test("confirmed upcoming menu remains available as relevant agent context", asyn
   assert.equal(relevant.id, confirmed.id);
 });
 
+test("complete meals can be swapped between scheduled weekdays", async () => {
+  const menu = await store.getRelevantMenu("2026-07-20");
+  const swapped = await store.swapMenuDays({
+    menuId: menu.id,
+    firstDay: "Tuesday",
+    secondDay: "Thursday"
+  });
+  const tuesday = swapped.days.find((entry) => entry.day === "Tuesday");
+  const thursday = swapped.days.find((entry) => entry.day === "Thursday");
+
+  assert.equal(tuesday.slot_type, "paneer_main");
+  assert.equal(tuesday.main_dish, "Palak Paneer");
+  assert.equal(tuesday.side_chicken, "Tandoori Chicken");
+  assert.match(tuesday.prep_notes, /overnight before Tuesday/);
+  assert.equal(thursday.slot_type, "chicken_main");
+  assert.equal(thursday.main_dish, "Chicken Curry");
+  assert.equal(thursday.side_chicken, null);
+  assert.doesNotMatch(thursday.prep_notes, /Tandoori/);
+});
+
+test("a complete meal can move to an unscheduled weekday", async () => {
+  const menu = await store.getRelevantMenu("2026-07-20");
+  const moved = await store.moveMenuDay({
+    menuId: menu.id,
+    fromDay: "Tuesday",
+    toDay: "Wednesday"
+  });
+  assert.ok(!moved.days.some((entry) => entry.day === "Tuesday"));
+  const wednesday = moved.days.find((entry) => entry.day === "Wednesday");
+  assert.equal(wednesday.main_dish, "Palak Paneer");
+  assert.equal(wednesday.side_chicken, "Tandoori Chicken");
+  assert.match(wednesday.prep_notes, /overnight before Wednesday/);
+
+  await assert.rejects(
+    store.moveMenuDay({
+      menuId: moved.id,
+      fromDay: "Wednesday",
+      toDay: "Thursday"
+    }),
+    /already scheduled/
+  );
+});
+
 test("preference writes are schema validated", async () => {
   await assert.rejects(store.updatePreference("never_use", "bhindi"));
   await assert.rejects(store.updatePreference("made_up_key", true));

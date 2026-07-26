@@ -9,10 +9,12 @@ import {
   getMenus,
   getPreferences,
   getRelevantMenu,
+  moveMenuDay,
   modifyMenuDay,
   recordMeal,
   rememberContext,
   searchContext,
+  swapMenuDays,
   updateDish,
   updatePreference
 } from "../db/store.js";
@@ -100,6 +102,38 @@ export const toolDefinitions = [
         cook_notes: { type: "string" }
       },
       required: ["day"]
+    }
+  },
+  {
+    name: "swap_menu_days",
+    description:
+      "Atomically swap the complete scheduled meals on two existing weekdays, " +
+      "including slot type, main, chicken side, prep notes, and cook notes. " +
+      "Use this for requests such as 'swap Tuesday and Thursday'; do not regenerate.",
+    parameters: {
+      type: "object",
+      properties: {
+        menu_id: { type: "string" },
+        first_day: { type: "string", enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] },
+        second_day: { type: "string", enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] }
+      },
+      required: ["first_day", "second_day"]
+    }
+  },
+  {
+    name: "move_menu_day",
+    description:
+      "Move a complete scheduled meal from one weekday to a currently unscheduled " +
+      "weekday, preserving its slot type, main, side, and notes. Use this when plans " +
+      "change, such as moving Thursday's chef meal to Wednesday. Do not regenerate.",
+    parameters: {
+      type: "object",
+      properties: {
+        menu_id: { type: "string" },
+        from_day: { type: "string", enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] },
+        to_day: { type: "string", enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] }
+      },
+      required: ["from_day", "to_day"]
     }
   },
   {
@@ -243,6 +277,18 @@ export async function executeTool(name, args = {}, context = {}) {
         side_chicken: args.side_chicken,
         prep_notes: args.prep_notes,
         cook_notes: args.cook_notes
+      });
+    case "swap_menu_days":
+      return swapMenuDays({
+        menuId: args.menu_id,
+        firstDay: args.first_day,
+        secondDay: args.second_day
+      });
+    case "move_menu_day":
+      return moveMenuDay({
+        menuId: args.menu_id,
+        fromDay: args.from_day,
+        toDay: args.to_day
       });
     case "get_menu_history": {
       const menus = await getMenus();

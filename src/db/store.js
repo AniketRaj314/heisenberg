@@ -4,7 +4,11 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { JSONFilePreset } from "lowdb/node";
 import { z } from "zod";
-import { parseMenuDraft, validateMenu } from "../domain/menu.js";
+import {
+  parseMenuDraft,
+  validateMenu,
+  WEEKDAYS
+} from "../domain/menu.js";
 import {
   parsePreferences,
   parsePreferenceUpdate
@@ -376,12 +380,145 @@ export async function modifyMenuDay({ menuId, day, main_dish, side_chicken, prep
       dishesDb.data.dishes,
       preferences,
       candidate.week_start,
-      recentMenus
+      recentMenus,
+      { requiredDays: null }
     );
     if (errors.length) {
       throw new Error(`Menu change violates guardrails: ${errors.join("; ")}`);
     }
 
+    storedMenu.days = candidate.days;
+    await menusDb.write();
+    return structuredClone(storedMenu);
+  });
+}
+
+function canonicalWeekday(value) {
+  const normalized = String(value).trim().toLowerCase();
+  const day = WEEKDAYS.find((weekday) => weekday.toLowerCase() === normalized);
+  if (!day) throw new Error(`Invalid weekday: ${value}`);
+  return day;
+}
+
+function findStoredMenu(menus, menuId) {
+  const menu = menuId
+    ? menus.find((item) => item.id === menuId)
+    : [...menus].sort((a, b) => b.generated_at.localeCompare(a.generated_at))[0];
+  if (!menu) throw new Error("No menu is available.");
+  return menu;
+}
+
+async function validateManualMenuChange({
+  candidate,
+  menus,
+  dishes,
+  preferences
+}) {
+  const recentMenus = menus
+    .filter((menu) => menu.week_start < candidate.week_start)
+    .sort((a, b) => b.week_start.localeCompare(a.week_start));
+  const errors = validateMenu(
+    candidate,
+    dishes,
+    parsePreferences(preferences),
+    candidate.week_start,
+    recentMenus,
+    { requiredDays: null }
+  );
+  if (errors.length) {
+    throw new Error(`Menu change violates guardrails: ${errors.join("; ")}`);
+  }
+}
+
+function reconcileTandooriPrep(days) {
+  for (const entry of days) {
+    entry.prep_notes = entry.prep_notes
+      .split("\n")
+      .filter(
+        (line) =>
+          !(
+            /tandoori/i.test(line) &&
+            /(marinat|overnight)/i.test(line)
+          )
+      )
+      .join("\n")
+      .trim();
+  }
+  const tandooriEntry = days.find(
+    (entry) => entry.side_chicken === "Tandoori Chicken"
+  );
+  if (!tandooriEntry) return;
+  tandooriEntry.prep_notes = [
+    tandooriEntry.prep_notes,
+    `Marinate Tandoori Chicken overnight before ${tandooriEntry.day}.`
+  ].filter(Boolean).join("\n");
+}
+
+export async function swapMenuDays({ menuId, firstDay, secondDay }) {
+  const first = canonicalWeekday(firstDay);
+  const second = canonicalWeekday(secondDay);
+  if (first === second) throw new Error("Choose two different menu days to swap.");
+  return withStoreLock(async () => {
+    const menusDb = db("menus");
+    const dishesDb = db("dishes");
+    const preferencesDb = db("preferences");
+    await Promise.all([menusDb.read(), dishesDb.read(), preferencesDb.read()]);
+    const storedMenu = findStoredMenu(menusDb.data.menus, menuId);
+    const candidate = {
+      week_start: storedMenu.week_start,
+      days: structuredClone(storedMenu.days)
+    };
+    const firstEntry = candidate.days.find((entry) => entry.day === first);
+    const secondEntry = candidate.days.find((entry) => entry.day === second);
+    if (!firstEntry || !secondEntry) {
+      throw new Error("Both weekdays must already be scheduled to swap them.");
+    }
+    const firstMeal = { ...firstEntry, day: second };
+    const secondMeal = { ...secondEntry, day: first };
+    Object.assign(firstEntry, secondMeal);
+    Object.assign(secondEntry, firstMeal);
+    reconcileTandooriPrep(candidate.days);
+    await validateManualMenuChange({
+      candidate,
+      menus: menusDb.data.menus,
+      dishes: dishesDb.data.dishes,
+      preferences: preferencesDb.data.preferences
+    });
+    storedMenu.days = candidate.days;
+    await menusDb.write();
+    return structuredClone(storedMenu);
+  });
+}
+
+export async function moveMenuDay({ menuId, fromDay, toDay }) {
+  const from = canonicalWeekday(fromDay);
+  const to = canonicalWeekday(toDay);
+  if (from === to) throw new Error("The meal is already scheduled on that day.");
+  return withStoreLock(async () => {
+    const menusDb = db("menus");
+    const dishesDb = db("dishes");
+    const preferencesDb = db("preferences");
+    await Promise.all([menusDb.read(), dishesDb.read(), preferencesDb.read()]);
+    const storedMenu = findStoredMenu(menusDb.data.menus, menuId);
+    const candidate = {
+      week_start: storedMenu.week_start,
+      days: structuredClone(storedMenu.days)
+    };
+    const entry = candidate.days.find((item) => item.day === from);
+    if (!entry) throw new Error(`${from} is not currently scheduled.`);
+    if (candidate.days.some((item) => item.day === to)) {
+      throw new Error(
+        `${to} is already scheduled; use swap_menu_days to exchange the meals.`
+      );
+    }
+    entry.day = to;
+    reconcileTandooriPrep(candidate.days);
+    await validateManualMenuChange({
+      candidate,
+      menus: menusDb.data.menus,
+      dishes: dishesDb.data.dishes,
+      preferences: preferencesDb.data.preferences
+    });
     storedMenu.days = candidate.days;
     await menusDb.write();
     return structuredClone(storedMenu);

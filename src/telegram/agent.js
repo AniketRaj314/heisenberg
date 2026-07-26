@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { WEEKDAYS } from "../domain/menu.js";
 import {
   getConversationHistory,
   getMealHistory,
@@ -37,16 +38,25 @@ export function buildMenuFacts(menu, dishes) {
       "fine, but they are not a second main dish."
   };
   if (!menu) return { menu_available: false, ...compositionFacts };
-  const scheduledDayNames = ["Monday", "Tuesday", "Thursday", "Friday", "Saturday"];
-  const scheduledDays = scheduledDayNames.map((day) =>
-    menu.days.find((entry) => entry.day === day)
+  const scheduledDays = [...menu.days].sort(
+    (a, b) => WEEKDAYS.indexOf(a.day) - WEEKDAYS.indexOf(b.day)
   );
+  const scheduledDayNames = scheduledDays.map((entry) => entry.day);
   const activeDrySides = dryChickenSides;
+  const dishesByName = new Map(dishes.map((dish) => [dish.name, dish]));
   const usedDrySides = menu.days
     .map((entry) => entry.side_chicken)
     .filter(Boolean);
   const uncoveredEligibleDays = menu.days
-    .filter((entry) => entry.slot_type !== "chicken_main" && !entry.side_chicken)
+    .filter(
+      (entry) => {
+        const mainCategory = dishesByName.get(entry.main_dish)?.category;
+        const mainIsChicken = mainCategory
+          ? mainCategory === "chicken_main"
+          : entry.slot_type === "chicken_main";
+        return !mainIsChicken && !entry.side_chicken;
+      }
+    )
     .map((entry) => entry.day);
   const validSidesForUncoveredDays = Object.fromEntries(
     uncoveredEligibleDays.map((day) => {
@@ -71,6 +81,9 @@ export function buildMenuFacts(menu, dishes) {
       "Chicken-main days have no catalogued side. Every other day should have one " +
       "active dry-chicken side. A side may repeat during the week, but not on " +
       "consecutive scheduled meal days.",
+    side_rotation_preference:
+      "Use every eligible active dry-chicken side before repeating one. If repeats " +
+      "are necessary, distribute them as evenly as possible.",
     active_dry_chicken_sides: activeDrySides,
     used_dry_chicken_sides: usedDrySides,
     eligible_days_without_a_side: uncoveredEligibleDays,
