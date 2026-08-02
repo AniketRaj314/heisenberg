@@ -85,8 +85,12 @@ const httpServer = app.listen(port, () => {
   console.log(`Heisenberg API and MCP server listening on port ${port}.`);
 });
 
-const telegramBot = await startTelegramBot();
-components.telegram = telegramBot ? "healthy" : "disabled";
+const telegramBot = startTelegramBot({
+  onStatusChange(status) {
+    components.telegram = status;
+  }
+});
+if (!telegramBot) components.telegram = "disabled";
 const cronTask = await startScheduler();
 components.scheduler = "healthy";
 

@@ -6,7 +6,10 @@ import {
   resolveAgentAnswer,
   summarizeToolAction
 } from "../src/telegram/agent.js";
-import { shouldRespondToMessage } from "../src/telegram/bot.js";
+import {
+  launchTelegramBotInBackground,
+  shouldRespondToMessage
+} from "../src/telegram/bot.js";
 import { formatAgentResponse, formatMenu } from "../src/telegram/format.js";
 import { AGENT_SYSTEM_PROMPT } from "../src/prompts/agent_system.js";
 
@@ -186,4 +189,53 @@ test("Telegram senders retain stable, distinct household identities", () => {
       username: "rahul"
     }
   );
+});
+
+test("Telegram long polling starts without blocking the application lifecycle", async () => {
+  const statuses = [];
+  let finishPolling;
+  const originalLog = console.log;
+  const fakeBot = {
+    launch(_config, onLaunch) {
+      onLaunch();
+      return new Promise((resolve) => {
+        finishPolling = resolve;
+      });
+    }
+  };
+
+  console.log = () => {};
+  try {
+    assert.equal(
+      launchTelegramBotInBackground(fakeBot, (status) => statuses.push(status)),
+      fakeBot
+    );
+    assert.deepEqual(statuses, ["healthy"]);
+
+    finishPolling();
+    await Promise.resolve();
+  } finally {
+    console.log = originalLog;
+  }
+});
+
+test("Telegram launch failures update component health", async () => {
+  const statuses = [];
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    launchTelegramBotInBackground(
+      {
+        launch() {
+          return Promise.reject(new Error("Telegram unavailable"));
+        }
+      },
+      (status) => statuses.push(status)
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(statuses, ["failed"]);
 });

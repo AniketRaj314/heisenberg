@@ -48,6 +48,7 @@ test("landing page uses external CSS and JavaScript under the site CSP", async (
   assert.match(styles, /@media \(max-width: 420px\)/);
   assert.match(styles, /prefers-reduced-motion/);
   assert.match(styles, /overflow-x: hidden/);
+  assert.match(styles, /\.orbit-one\s*\{\s*transform: none;/);
   assert.doesNotMatch(styles, /marquee|floating-note|feature-card/);
   assert.match(styles, /animation: tab-progress 3s linear forwards/);
   assert.match(script, /renderScene\("draft"\)/);
