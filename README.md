@@ -111,7 +111,7 @@ The MCP endpoint shares the application’s Railway `PORT` at `/mcp` and require
 
 ## Environment variables
 
-See `.env.example`. `OPENAI_MENU_MODEL`, `OPENAI_AGENT_MODEL`, `OPENAI_AGENT_REASONING_EFFORT`, and `TZ` are optional. Menu generation defaults to `gpt-5.6-luna`, conversational tool use defaults to `gpt-5.6-terra` with low reasoning effort, and the timezone defaults to `Asia/Kolkata`.
+See `.env.example`. `OPENAI_MENU_MODEL`, `OPENAI_AGENT_MODEL`, `OPENAI_AGENT_REASONING_EFFORT`, and `TZ` are optional. Menu generation defaults to `gpt-5.6-luna`, conversational tool use defaults to `gpt-5.6-terra` with the Chat Completions-compatible `none` reasoning mode, and the timezone defaults to `Asia/Kolkata`. Terra tool calls use `none` even when a higher effort is configured because reasoning effort with function tools requires the Responses API for that model.
 
 For backward compatibility, the application still accepts `OPENAI_MODEL` as a shared fallback when a task-specific model variable is absent.
 

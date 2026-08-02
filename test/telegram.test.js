@@ -4,6 +4,7 @@ import {
   buildMenuFacts,
   normalizeTelegramSender,
   resolveAgentAnswer,
+  resolveAgentReasoningEffort,
   summarizeToolAction
 } from "../src/telegram/agent.js";
 import {
@@ -12,6 +13,7 @@ import {
 } from "../src/telegram/bot.js";
 import { formatAgentResponse, formatMenu } from "../src/telegram/format.js";
 import { AGENT_SYSTEM_PROMPT } from "../src/prompts/agent_system.js";
+import { toolDefinitions } from "../src/mcp/tools.js";
 
 test("agent Markdown is converted to safe Telegram HTML", () => {
   assert.equal(
@@ -238,4 +240,39 @@ test("Telegram launch failures update component health", async () => {
   }
 
   assert.deepEqual(statuses, ["failed"]);
+});
+
+test("Telegram agent tools use OpenAI-compatible top-level schemas", () => {
+  const unsupportedTopLevelKeywords = [
+    "oneOf",
+    "anyOf",
+    "allOf",
+    "enum",
+    "const",
+    "not"
+  ];
+
+  for (const tool of toolDefinitions) {
+    assert.equal(
+      tool.parameters.type,
+      "object",
+      `${tool.name} must use a top-level object schema`
+    );
+    for (const keyword of unsupportedTopLevelKeywords) {
+      assert.equal(
+        tool.parameters[keyword],
+        undefined,
+        `${tool.name} cannot use top-level ${keyword}`
+      );
+    }
+  }
+});
+
+test("Terra tool calls use the supported Chat Completions reasoning mode", () => {
+  assert.equal(resolveAgentReasoningEffort("gpt-5.6-terra", "low"), "none");
+  assert.equal(
+    resolveAgentReasoningEffort("gpt-5.6-terra-2026-08-01", "high"),
+    "none"
+  );
+  assert.equal(resolveAgentReasoningEffort("gpt-5-mini", "low"), "low");
 });
