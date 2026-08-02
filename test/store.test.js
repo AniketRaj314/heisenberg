@@ -59,10 +59,54 @@ test("invalid menu changes are rejected without mutating stored data", async () 
       day: "Monday",
       main_dish: "Unknown Dish"
     }),
-    /violates guardrails/
+    /Inactive or unknown main dish/
   );
   const afterMenu = await store.getLatestDraft();
   assert.equal(afterMenu.days[0].main_dish, before.days[0].main_dish);
+});
+
+test("menu changes require a concrete mutation", async () => {
+  const before = await store.getLatestDraft();
+  await assert.rejects(
+    store.modifyMenuDay({ menuId: before.id, day: "Saturday" }),
+    /at least one menu field/
+  );
+  const after = await store.getLatestDraft();
+  assert.deepEqual(after.days, before.days);
+});
+
+test("explicit menu edits can override generation policy and return a receipt", async () => {
+  const before = await store.getLatestDraft();
+  const changed = await store.modifyMenuDay({
+    menuId: before.id,
+    day: "Saturday",
+    main_dish: "Chicken Curry"
+  });
+  const saturday = changed.days.find((entry) => entry.day === "Saturday");
+
+  assert.equal(saturday.main_dish, "Chicken Curry");
+  assert.equal(saturday.slot_type, "chicken_main");
+  assert.equal(saturday.side_chicken, null);
+  assert.match(changed.action.summary, /Egg Bhurji → Chicken Curry/);
+  assert.match(changed.action.summary, /Lemon Pepper Chicken → none/);
+
+  await assert.rejects(
+    store.modifyMenuDay({
+      menuId: before.id,
+      day: "Saturday",
+      main_dish: "Chicken Curry"
+    }),
+    /No change was made/
+  );
+
+  await assert.rejects(
+    store.modifyMenuDay({
+      menuId: before.id,
+      day: "Friday",
+      side_chicken: "Chicken Curry"
+    }),
+    /invalid side chicken/
+  );
 });
 
 test("confirmed upcoming menu remains available as relevant agent context", async () => {

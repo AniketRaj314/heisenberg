@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildMenuFacts,
-  normalizeTelegramSender
+  normalizeTelegramSender,
+  resolveAgentAnswer,
+  summarizeToolAction
 } from "../src/telegram/agent.js";
 import { shouldRespondToMessage } from "../src/telegram/bot.js";
 import { formatAgentResponse } from "../src/telegram/format.js";
@@ -15,6 +17,26 @@ test("agent Markdown is converted to safe Telegram HTML", () => {
   assert.equal(
     formatAgentResponse("<script>alert('x')</script>"),
     "&lt;script&gt;alert('x')&lt;/script&gt;"
+  );
+});
+
+test("agent responses never turn an empty mutation result into a vague success", () => {
+  assert.equal(
+    resolveAgentAnswer("", ["Updated Saturday: main Egg Curry → Cheela Chutney."]),
+    "Updated Saturday: main Egg Curry → Cheela Chutney."
+  );
+  assert.throws(
+    () => resolveAgentAnswer("", []),
+    /empty response without completing an action/
+  );
+  assert.equal(resolveAgentAnswer("  Changed it.  ", []), "Changed it.");
+  assert.equal(
+    summarizeToolAction(
+      "move_menu_day",
+      { from_day: "Thursday", to_day: "Wednesday" },
+      {}
+    ),
+    "Moved the complete meal from Thursday to Wednesday."
   );
 });
 

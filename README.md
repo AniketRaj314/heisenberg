@@ -108,7 +108,7 @@ The MCP endpoint shares the application’s Railway `PORT` at `/mcp` and require
 
 ## Environment variables
 
-See `.env.example`. `OPENAI_MENU_MODEL`, `OPENAI_AGENT_MODEL`, and `TZ` are optional. Menu generation defaults to `gpt-5.6-luna`, conversational tool use defaults to `gpt-5.6-terra`, and the timezone defaults to `Asia/Kolkata`.
+See `.env.example`. `OPENAI_MENU_MODEL`, `OPENAI_AGENT_MODEL`, `OPENAI_AGENT_REASONING_EFFORT`, and `TZ` are optional. Menu generation defaults to `gpt-5.6-luna`, conversational tool use defaults to `gpt-5.6-terra` with low reasoning effort, and the timezone defaults to `Asia/Kolkata`.
 
 For backward compatibility, the application still accepts `OPENAI_MODEL` as a shared fallback when a task-specific model variable is absent.
 
@@ -121,6 +121,8 @@ Custom rules use deterministic formats so the server can enforce them after AI g
 - `require_main:<dish>`
 - `not_on:<day>:<dish>`
 - `pair:<dish>|<dish>`
+
+These are generation policies, not immutable properties of stored menus. The AI applies them when creating a draft, while a direct user edit is allowed to override rotation, category quotas, history avoidance, and other planning defaults. Storage continues to enforce valid active dish references, unique weekdays, and valid main/side roles.
 
 ## Local release check
 
@@ -148,3 +150,4 @@ Then verify `/health`, `/menu`, `/generate`, a natural-language menu change, `/c
 - `src/telegram/bot.js` — Telegram commands, group restriction, and backups.
 - `src/telegram/format.js` — readable Telegram output.
 - `test/generator.test.js` — core date and validation checks.
+- `docs/agent-flexibility-audit.md` — agent/storage boundary review and follow-up roadmap.

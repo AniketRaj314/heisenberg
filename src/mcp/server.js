@@ -86,7 +86,8 @@ function createServer(version) {
   );
   register(
     "modify_menu_day",
-    "Modify fields for a day in the latest menu.",
+    "Apply a concrete edit to one day in the latest menu. At least one menu field " +
+      "must be supplied; never call this operation with only a day.",
     {
       menu_id: z.string().uuid().optional(),
       day: z.enum(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]),

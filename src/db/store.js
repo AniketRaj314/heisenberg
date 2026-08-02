@@ -347,6 +347,14 @@ export async function confirmMenu(menuId) {
 }
 
 export async function modifyMenuDay({ menuId, day, main_dish, side_chicken, prep_notes, cook_notes }) {
+  if (
+    main_dish === undefined &&
+    side_chicken === undefined &&
+    prep_notes === undefined &&
+    cook_notes === undefined
+  ) {
+    throw new Error("Specify at least one menu field to change.");
+  }
   return withStoreLock(async () => {
     const menusDb = db("menus");
     const dishesDb = db("dishes");
@@ -366,10 +374,31 @@ export async function modifyMenuDay({ menuId, day, main_dish, side_chicken, prep
       (item) => item.day.toLowerCase() === String(day).toLowerCase()
     );
     if (!entry) throw new Error(`Day is not in the menu: ${day}`);
-    if (main_dish !== undefined) entry.main_dish = main_dish;
+    const before = structuredClone(entry);
+    if (main_dish !== undefined) {
+      const selectedDish = dishesDb.data.dishes.find(
+        (dish) => dish.active && dish.name === main_dish
+      );
+      if (!selectedDish) throw new Error(`Inactive or unknown main dish: ${main_dish}`);
+      if (selectedDish.category === "dry_chicken") {
+        throw new Error(`${main_dish} is a side dish and cannot be used as the main.`);
+      }
+      if (entry.main_dish !== selectedDish.name) {
+        entry.main_dish = selectedDish.name;
+        entry.slot_type = selectedDish.category;
+        if (selectedDish.category === "chicken_main" && side_chicken === undefined) {
+          entry.side_chicken = null;
+        }
+      }
+    }
     if (side_chicken !== undefined) entry.side_chicken = side_chicken;
     if (prep_notes !== undefined) entry.prep_notes = prep_notes;
     if (cook_notes !== undefined) entry.cook_notes = cook_notes;
+
+    if (JSON.stringify(before) === JSON.stringify(entry)) {
+      throw new Error(`No change was made to ${entry.day}.`);
+    }
+    reconcileTandooriPrep(candidate.days);
 
     const preferences = parsePreferences(preferencesDb.data.preferences);
     const recentMenus = menusDb.data.menus
@@ -381,7 +410,7 @@ export async function modifyMenuDay({ menuId, day, main_dish, side_chicken, prep
       preferences,
       candidate.week_start,
       recentMenus,
-      { requiredDays: null }
+      { requiredDays: null, mode: "manual" }
     );
     if (errors.length) {
       throw new Error(`Menu change violates guardrails: ${errors.join("; ")}`);
@@ -389,8 +418,29 @@ export async function modifyMenuDay({ menuId, day, main_dish, side_chicken, prep
 
     storedMenu.days = candidate.days;
     await menusDb.write();
-    return structuredClone(storedMenu);
+    const result = structuredClone(storedMenu);
+    result.action = {
+      type: "modify_menu_day",
+      day: entry.day,
+      before,
+      after: structuredClone(entry),
+      summary: describeMenuDayChange(before, entry)
+    };
+    return result;
   });
+}
+
+function describeMenuDayChange(before, after) {
+  const changes = [];
+  if (before.main_dish !== after.main_dish) {
+    changes.push(`main ${before.main_dish} → ${after.main_dish}`);
+  }
+  if (before.side_chicken !== after.side_chicken) {
+    changes.push(`side ${before.side_chicken ?? "none"} → ${after.side_chicken ?? "none"}`);
+  }
+  if (before.prep_notes !== after.prep_notes) changes.push("prep notes updated");
+  if (before.cook_notes !== after.cook_notes) changes.push("cook notes updated");
+  return `Updated ${after.day}: ${changes.join("; ")}.`;
 }
 
 function canonicalWeekday(value) {
@@ -423,7 +473,7 @@ async function validateManualMenuChange({
     parsePreferences(preferences),
     candidate.week_start,
     recentMenus,
-    { requiredDays: null }
+    { requiredDays: null, mode: "manual" }
   );
   if (errors.length) {
     throw new Error(`Menu change violates guardrails: ${errors.join("; ")}`);

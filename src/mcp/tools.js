@@ -90,7 +90,10 @@ export const toolDefinitions = [
   },
   {
     name: "modify_menu_day",
-    description: "Modify fields for a day in the latest menu.",
+    description:
+      "Apply a concrete edit to one day in the latest menu. For an open-ended " +
+      "replacement, first choose the exact active dish, then pass it as main_dish. " +
+      "Never call this tool with only day; at least one changed field is required.",
     parameters: {
       type: "object",
       properties: {
@@ -101,7 +104,13 @@ export const toolDefinitions = [
         prep_notes: { type: "string" },
         cook_notes: { type: "string" }
       },
-      required: ["day"]
+      required: ["day"],
+      anyOf: [
+        { required: ["main_dish"] },
+        { required: ["side_chicken"] },
+        { required: ["prep_notes"] },
+        { required: ["cook_notes"] }
+      ]
     }
   },
   {

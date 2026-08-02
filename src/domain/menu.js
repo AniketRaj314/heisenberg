@@ -70,7 +70,7 @@ export function validateMenu(
   preferences,
   expectedWeekStart,
   recentMenus = [],
-  { requiredDays = MENU_DAYS } = {}
+  { requiredDays = MENU_DAYS, mode = "generation" } = {}
 ) {
   const parsed = MenuDraftSchema.safeParse(menu);
   if (!parsed.success) {
@@ -81,6 +81,7 @@ export function validateMenu(
 
   const candidate = parsed.data;
   const errors = [];
+  const enforcePlanningPolicy = mode === "generation";
   const active = dishes.filter((dish) => dish.active);
   const byName = new Map(active.map((dish) => [dish.name, dish]));
   const customRules = (preferences.custom_rules ?? []).map(parseCustomRule);
@@ -106,18 +107,24 @@ export function validateMenu(
     errors.push("scheduled weekdays must be unique");
   }
   if (
+    enforcePlanningPolicy &&
     requiredDays &&
     (days.length !== requiredDays.length ||
       requiredDays.some((day) => !days.includes(day)))
   ) {
     errors.push("required weekdays must each appear exactly once");
   }
-  if (new Set(slots).size !== MENU_SLOTS.length || MENU_SLOTS.some((slot) => !slots.includes(slot))) {
+  if (
+    enforcePlanningPolicy &&
+    (new Set(slots).size !== MENU_SLOTS.length || MENU_SLOTS.some((slot) => !slots.includes(slot)))
+  ) {
     errors.push("required slots must each appear exactly once");
   }
 
   const mainNames = candidate.days.map((entry) => entry.main_dish);
-  if (new Set(mainNames).size !== mainNames.length) errors.push("main dishes repeat");
+  if (enforcePlanningPolicy && new Set(mainNames).size !== mainNames.length) {
+    errors.push("main dishes repeat");
+  }
 
   let paneerCount = 0;
   let carbCount = 0;
@@ -135,7 +142,7 @@ export function validateMenu(
     }
     if (main.category === "paneer_main") paneerCount += 1;
     if (main.category === "carb_heavy") carbCount += 1;
-    if (banned.some((term) => normalize(main.name).includes(term))) {
+    if (enforcePlanningPolicy && banned.some((term) => normalize(main.name).includes(term))) {
       errors.push(`${main.name} is banned`);
     }
 
@@ -149,7 +156,9 @@ export function validateMenu(
       const hasEligibleSide = [...availableDryChickenNames].some(
         (name) => !(entry.day === "Monday" && name === "Tandoori Chicken")
       );
-      if (hasEligibleSide) errors.push(`${entry.day} is missing a dry-chicken side`);
+      if (enforcePlanningPolicy && hasEligibleSide) {
+        errors.push(`${entry.day} is missing a dry-chicken side`);
+      }
       continue;
     }
     const side = byName.get(entry.side_chicken);
@@ -157,14 +166,19 @@ export function validateMenu(
       errors.push(`invalid side chicken: ${entry.side_chicken}`);
       continue;
     }
-    if (banned.some((term) => normalize(side.name).includes(term))) {
+    if (enforcePlanningPolicy && banned.some((term) => normalize(side.name).includes(term))) {
       errors.push(`${side.name} is banned`);
     }
-    if (entry.day === "Monday" && side.name === "Tandoori Chicken") {
+    if (enforcePlanningPolicy && entry.day === "Monday" && side.name === "Tandoori Chicken") {
       errors.push("Tandoori Chicken cannot be used Monday");
     }
     if (side.name === "Tandoori Chicken") tandooriUsed = true;
   }
+
+  // Direct user edits are explicit overrides. Persistence still protects the
+  // shape and dish references above; rotation, quotas, history and prep rules
+  // remain generation policy owned by the planner.
+  if (!enforcePlanningPolicy) return [...new Set(errors)];
 
   if (paneerCount > preferences.max_paneer_per_week) {
     errors.push("paneer maximum exceeded");
