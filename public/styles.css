@@ -1020,6 +1020,10 @@ footer {
 }
 
 @media (max-width: 720px) {
+  .orbit-one {
+    transform: none;
+  }
+
   .section-shell,
   .site-header,
   footer {

@@ -127,6 +127,10 @@ export function resolveAgentAnswer(content, completedActions = []) {
   throw new Error("The AI returned an empty response without completing an action.");
 }
 
+export function resolveAgentReasoningEffort(model, requestedEffort = "low") {
+  return model.startsWith("gpt-5.6-terra") ? "none" : requestedEffort;
+}
+
 export function summarizeToolAction(name, args, result) {
   if (result?.action?.summary) return result.action.summary;
   switch (name) {
@@ -234,16 +238,20 @@ export async function runAgent(userMessage, telegramSender = {}) {
 
   let answer = "";
   const completedActions = [];
+  const model =
+    process.env.OPENAI_AGENT_MODEL ||
+    process.env.OPENAI_MODEL ||
+    "gpt-5.6-terra";
   for (let turn = 0; turn < 6; turn += 1) {
     const completion = await client.chat.completions.create({
-      model:
-        process.env.OPENAI_AGENT_MODEL ||
-        process.env.OPENAI_MODEL ||
-        "gpt-5.6-terra",
+      model,
       messages,
       tools,
       tool_choice: "auto",
-      reasoning_effort: process.env.OPENAI_AGENT_REASONING_EFFORT || "low",
+      reasoning_effort: resolveAgentReasoningEffort(
+        model,
+        process.env.OPENAI_AGENT_REASONING_EFFORT || "low"
+      ),
       max_completion_tokens: 1800
     });
     const message = completion.choices[0]?.message;

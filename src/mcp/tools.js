@@ -106,14 +106,7 @@ export const toolDefinitions = [
         cook_notes: { type: "string" },
         request_id: { type: "string" }
       },
-      required: ["day"],
-      anyOf: [
-        { required: ["main_dish"] },
-        { required: ["meal_status"] },
-        { required: ["side_chicken"] },
-        { required: ["prep_notes"] },
-        { required: ["cook_notes"] }
-      ]
+      required: ["day"]
     }
   },
   {

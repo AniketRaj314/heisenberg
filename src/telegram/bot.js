@@ -89,7 +89,23 @@ export async function sendMenuToTelegram(menu) {
   });
 }
 
-export async function startTelegramBot() {
+export function launchTelegramBotInBackground(
+  botInstance,
+  onStatusChange = () => {}
+) {
+  void botInstance
+    .launch({}, () => {
+      onStatusChange("healthy");
+      console.log("Heisenberg Telegram bot started.");
+    })
+    .catch((error) => {
+      onStatusChange("failed");
+      console.error("Telegram bot failed to start:", error);
+    });
+  return botInstance;
+}
+
+export function startTelegramBot({ onStatusChange = () => {} } = {}) {
   if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
     console.warn("Telegram is disabled: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing.");
     return null;
@@ -242,9 +258,7 @@ export async function startTelegramBot() {
     }
   });
 
-  await bot.launch();
-  console.log("Heisenberg Telegram bot started.");
-  return bot;
+  return launchTelegramBotInBackground(bot, onStatusChange);
 }
 
 export function stopTelegramBot(signal) {
