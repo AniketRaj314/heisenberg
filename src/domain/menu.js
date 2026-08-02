@@ -12,8 +12,9 @@ export const WEEKDAYS = [
 ];
 export const MENU_DAYS = ["Monday", "Tuesday", "Thursday", "Friday", "Saturday"];
 export const MENU_SLOTS = ["carb_heavy", "chicken_main", "paneer_main", "sabzi", "random"];
+export const MEAL_STATUSES = ["planned", "dining_out", "skipped"];
 
-const MenuDaySchema = z.object({
+const GeneratedMenuDaySchema = z.object({
   day: z.enum(WEEKDAYS),
   slot_type: z.enum(MENU_SLOTS),
   main_dish: z.string().trim().min(1).max(200),
@@ -24,7 +25,38 @@ const MenuDaySchema = z.object({
 
 export const MenuDraftSchema = z.object({
   week_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  days: z.array(MenuDaySchema).length(5)
+  days: z.array(GeneratedMenuDaySchema).length(5)
+}).strict();
+
+const StoredMenuDaySchema = z.object({
+  day: z.enum(WEEKDAYS),
+  meal_status: z.enum(MEAL_STATUSES).default("planned"),
+  slot_type: z.enum(MENU_SLOTS).nullable(),
+  main_dish: z.string().trim().min(1).max(200).nullable(),
+  side_chicken: z.string().trim().min(1).max(200).nullable(),
+  prep_notes: z.string().max(1000),
+  cook_notes: z.string().max(1000)
+}).strict().superRefine((entry, context) => {
+  if (entry.meal_status === "planned") {
+    if (!entry.slot_type) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["slot_type"], message: "is required for a planned meal" });
+    }
+    if (!entry.main_dish) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["main_dish"], message: "is required for a planned meal" });
+    }
+    return;
+  }
+  if (entry.slot_type || entry.main_dish || entry.side_chicken) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `${entry.meal_status} days cannot contain planned dishes`
+    });
+  }
+});
+
+export const StoredMenuDraftSchema = z.object({
+  week_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  days: z.array(StoredMenuDaySchema).max(WEEKDAYS.length)
 }).strict();
 
 function normalize(value) {
@@ -70,9 +102,10 @@ export function validateMenu(
   preferences,
   expectedWeekStart,
   recentMenus = [],
-  { requiredDays = MENU_DAYS } = {}
+  { requiredDays = MENU_DAYS, mode = "generation" } = {}
 ) {
-  const parsed = MenuDraftSchema.safeParse(menu);
+  const enforcePlanningPolicy = mode === "generation";
+  const parsed = (enforcePlanningPolicy ? MenuDraftSchema : StoredMenuDraftSchema).safeParse(menu);
   if (!parsed.success) {
     return parsed.error.issues.map(
       (issue) => `${issue.path.join(".") || "menu"}: ${issue.message}`
@@ -101,29 +134,39 @@ export function validateMenu(
   if (candidate.week_start !== expectedWeekStart) errors.push("week_start is incorrect");
 
   const days = candidate.days.map((entry) => entry.day);
-  const slots = candidate.days.map((entry) => entry.slot_type);
+  const plannedEntries = candidate.days.filter(
+    (entry) => (entry.meal_status ?? "planned") === "planned"
+  );
+  const slots = plannedEntries.map((entry) => entry.slot_type);
   if (new Set(days).size !== candidate.days.length) {
     errors.push("scheduled weekdays must be unique");
   }
   if (
+    enforcePlanningPolicy &&
     requiredDays &&
     (days.length !== requiredDays.length ||
       requiredDays.some((day) => !days.includes(day)))
   ) {
     errors.push("required weekdays must each appear exactly once");
   }
-  if (new Set(slots).size !== MENU_SLOTS.length || MENU_SLOTS.some((slot) => !slots.includes(slot))) {
+  if (
+    enforcePlanningPolicy &&
+    (new Set(slots).size !== MENU_SLOTS.length || MENU_SLOTS.some((slot) => !slots.includes(slot)))
+  ) {
     errors.push("required slots must each appear exactly once");
   }
 
-  const mainNames = candidate.days.map((entry) => entry.main_dish);
-  if (new Set(mainNames).size !== mainNames.length) errors.push("main dishes repeat");
+  const mainNames = plannedEntries.map((entry) => entry.main_dish);
+  if (enforcePlanningPolicy && new Set(mainNames).size !== mainNames.length) {
+    errors.push("main dishes repeat");
+  }
 
   let paneerCount = 0;
   let carbCount = 0;
   let tandooriUsed = false;
 
   for (const entry of candidate.days) {
+    if ((entry.meal_status ?? "planned") !== "planned") continue;
     const main = byName.get(entry.main_dish);
     if (!main) {
       errors.push(`inactive or unknown main dish: ${entry.main_dish}`);
@@ -135,7 +178,7 @@ export function validateMenu(
     }
     if (main.category === "paneer_main") paneerCount += 1;
     if (main.category === "carb_heavy") carbCount += 1;
-    if (banned.some((term) => normalize(main.name).includes(term))) {
+    if (enforcePlanningPolicy && banned.some((term) => normalize(main.name).includes(term))) {
       errors.push(`${main.name} is banned`);
     }
 
@@ -149,7 +192,9 @@ export function validateMenu(
       const hasEligibleSide = [...availableDryChickenNames].some(
         (name) => !(entry.day === "Monday" && name === "Tandoori Chicken")
       );
-      if (hasEligibleSide) errors.push(`${entry.day} is missing a dry-chicken side`);
+      if (enforcePlanningPolicy && hasEligibleSide) {
+        errors.push(`${entry.day} is missing a dry-chicken side`);
+      }
       continue;
     }
     const side = byName.get(entry.side_chicken);
@@ -157,14 +202,19 @@ export function validateMenu(
       errors.push(`invalid side chicken: ${entry.side_chicken}`);
       continue;
     }
-    if (banned.some((term) => normalize(side.name).includes(term))) {
+    if (enforcePlanningPolicy && banned.some((term) => normalize(side.name).includes(term))) {
       errors.push(`${side.name} is banned`);
     }
-    if (entry.day === "Monday" && side.name === "Tandoori Chicken") {
+    if (enforcePlanningPolicy && entry.day === "Monday" && side.name === "Tandoori Chicken") {
       errors.push("Tandoori Chicken cannot be used Monday");
     }
     if (side.name === "Tandoori Chicken") tandooriUsed = true;
   }
+
+  // Direct user edits are explicit overrides. Persistence still protects the
+  // shape and dish references above; rotation, quotas, history and prep rules
+  // remain generation policy owned by the planner.
+  if (!enforcePlanningPolicy) return [...new Set(errors)];
 
   if (paneerCount > preferences.max_paneer_per_week) {
     errors.push("paneer maximum exceeded");
@@ -174,7 +224,7 @@ export function validateMenu(
   }
   for (const rule of customRules) {
     if (rule.type === "max_category") {
-      const count = candidate.days.filter(
+      const count = plannedEntries.filter(
         (entry) => byName.get(entry.main_dish)?.category === rule.category
       ).length;
       if (count > rule.count) {
@@ -186,7 +236,7 @@ export function validateMenu(
     }
     if (
       rule.type === "not_on" &&
-      candidate.days.some(
+      plannedEntries.some(
         (entry) =>
           normalize(entry.day) === normalize(rule.day) &&
           normalize(entry.main_dish) === normalize(rule.dish)
@@ -203,7 +253,7 @@ export function validateMenu(
       }
     }
   }
-  const scheduledDays = [...candidate.days].sort(
+  const scheduledDays = [...plannedEntries].sort(
     (a, b) => WEEKDAYS.indexOf(a.day) - WEEKDAYS.indexOf(b.day)
   );
   for (let index = 1; index < scheduledDays.length; index += 1) {
@@ -259,14 +309,14 @@ export function validateMenu(
 
   if (
     tandooriUsed &&
-    !candidate.days.some((entry) => mentionsTandooriPrep(entry.prep_notes))
+    !plannedEntries.some((entry) => mentionsTandooriPrep(entry.prep_notes))
   ) {
     errors.push("Tandoori Chicken needs an overnight-marination prep note");
   }
 
   const weeksToAvoid = preferences.cross_week_avoid_last_n_weeks ?? 0;
   const recentlyUsed = recentMainNames(recentMenus, weeksToAvoid);
-  for (const entry of candidate.days) {
+  for (const entry of plannedEntries) {
     if (!recentlyUsed.has(entry.main_dish)) continue;
     const main = byName.get(entry.main_dish);
     if (!main) continue;

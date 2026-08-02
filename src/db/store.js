@@ -47,6 +47,7 @@ const defaults = {
 
 const dbs = {};
 let operationQueue = Promise.resolve();
+const MENU_SCHEMA_VERSION = 2;
 
 const DishInputSchema = z.object({
   name: z.string().trim().min(1).max(200),
@@ -126,6 +127,25 @@ export async function initStore() {
       await dbs[name].write();
     })
   );
+  const menusDb = dbs.menus;
+  let menusChanged = false;
+  for (const menu of menusDb.data.menus) {
+    if (menu.schema_version !== MENU_SCHEMA_VERSION) {
+      menu.schema_version = MENU_SCHEMA_VERSION;
+      menusChanged = true;
+    }
+    if (!Array.isArray(menu.changes)) {
+      menu.changes = [];
+      menusChanged = true;
+    }
+    for (const entry of menu.days ?? []) {
+      if (!entry.meal_status) {
+        entry.meal_status = "planned";
+        menusChanged = true;
+      }
+    }
+  }
+  if (menusChanged) await menusDb.write();
   return dbs;
 }
 
@@ -250,10 +270,12 @@ export async function saveMenu(menu) {
     await menusDb.read();
     const saved = {
       week_start: draft.week_start,
-      days: draft.days,
+      days: draft.days.map((entry) => ({ ...entry, meal_status: "planned" })),
       id: randomUUID(),
       generated_at: new Date().toISOString(),
-      status: "draft"
+      status: "draft",
+      schema_version: MENU_SCHEMA_VERSION,
+      changes: []
     };
     menusDb.data.menus = menusDb.data.menus.filter(
       (item) => !(item.week_start === saved.week_start && item.status === "draft")
@@ -346,30 +368,107 @@ export async function confirmMenu(menuId) {
   });
 }
 
-export async function modifyMenuDay({ menuId, day, main_dish, side_chicken, prep_notes, cook_notes }) {
+export async function modifyMenuDay(
+  { menuId, day, meal_status, main_dish, side_chicken, prep_notes, cook_notes },
+  context = {}
+) {
+  if (
+    meal_status === undefined &&
+    main_dish === undefined &&
+    side_chicken === undefined &&
+    prep_notes === undefined &&
+    cook_notes === undefined
+  ) {
+    throw new Error("Specify at least one menu field to change.");
+  }
+  const canonicalDay = canonicalWeekday(day);
+  const requestedStatus = z.enum([
+    "planned",
+    "dining_out",
+    "skipped",
+    "unscheduled"
+  ]).optional().parse(meal_status);
   return withStoreLock(async () => {
     const menusDb = db("menus");
     const dishesDb = db("dishes");
     const preferencesDb = db("preferences");
     await Promise.all([menusDb.read(), dishesDb.read(), preferencesDb.read()]);
 
-    const storedMenu = menuId
-      ? menusDb.data.menus.find((item) => item.id === menuId)
-      : [...menusDb.data.menus].sort((a, b) => b.generated_at.localeCompare(a.generated_at))[0];
-    if (!storedMenu) throw new Error("No menu is available.");
+    const storedMenu = findStoredMenu(menusDb.data.menus, menuId);
+    const repeated = repeatedMenuAction(storedMenu, context.requestId);
+    if (repeated) return menuResult(storedMenu, repeated);
 
     const candidate = {
       week_start: storedMenu.week_start,
       days: structuredClone(storedMenu.days)
     };
-    const entry = candidate.days.find(
-      (item) => item.day.toLowerCase() === String(day).toLowerCase()
-    );
-    if (!entry) throw new Error(`Day is not in the menu: ${day}`);
-    if (main_dish !== undefined) entry.main_dish = main_dish;
-    if (side_chicken !== undefined) entry.side_chicken = side_chicken;
-    if (prep_notes !== undefined) entry.prep_notes = prep_notes;
-    if (cook_notes !== undefined) entry.cook_notes = cook_notes;
+    const entryIndex = candidate.days.findIndex((item) => item.day === canonicalDay);
+    let entry = entryIndex >= 0 ? candidate.days[entryIndex] : null;
+    const before = entry ? structuredClone(entry) : null;
+
+    if (requestedStatus === "unscheduled") {
+      if (!entry) throw new Error(`No change was made to ${canonicalDay}.`);
+      candidate.days.splice(entryIndex, 1);
+      entry = null;
+    } else {
+      const targetStatus = requestedStatus ?? entry?.meal_status ?? "planned";
+      if (!entry) {
+        entry = {
+          day: canonicalDay,
+          meal_status: targetStatus,
+          slot_type: null,
+          main_dish: null,
+          side_chicken: null,
+          prep_notes: "",
+          cook_notes: ""
+        };
+        candidate.days.push(entry);
+      }
+      entry.meal_status = targetStatus;
+
+      if (targetStatus !== "planned") {
+        if (main_dish !== undefined || side_chicken !== undefined) {
+          throw new Error(`${targetStatus} days cannot contain planned dishes.`);
+        }
+        entry.slot_type = null;
+        entry.main_dish = null;
+        entry.side_chicken = null;
+        const statusChanged = (before?.meal_status ?? "planned") !== targetStatus;
+        entry.prep_notes = prep_notes ?? (statusChanged ? "" : entry.prep_notes);
+        entry.cook_notes = cook_notes ?? (statusChanged ? "" : entry.cook_notes);
+      } else {
+        const selectedName = main_dish ?? entry.main_dish;
+        if (!selectedName) {
+          throw new Error(`A main dish is required to plan ${canonicalDay}.`);
+        }
+        const selectedDish = dishesDb.data.dishes.find(
+          (dish) => dish.active && dish.name === selectedName
+        );
+        if (!selectedDish) throw new Error(`Inactive or unknown main dish: ${selectedName}`);
+        if (selectedDish.category === "dry_chicken") {
+          throw new Error(`${selectedName} is a side dish and cannot be used as the main.`);
+        }
+        const mainChanged = entry.main_dish !== selectedDish.name;
+        entry.main_dish = selectedDish.name;
+        if (mainChanged || !entry.slot_type) entry.slot_type = selectedDish.category;
+        if (mainChanged && selectedDish.category === "chicken_main" && side_chicken === undefined) {
+          entry.side_chicken = null;
+        }
+        if (side_chicken !== undefined) entry.side_chicken = side_chicken;
+        if (prep_notes !== undefined) entry.prep_notes = prep_notes;
+        if (cook_notes !== undefined) entry.cook_notes = cook_notes;
+      }
+    }
+
+    if (JSON.stringify(before) === JSON.stringify(entry)) {
+      throw new Error(`No change was made to ${canonicalDay}.`);
+    }
+    if (
+      before?.side_chicken === "Tandoori Chicken" ||
+      entry?.side_chicken === "Tandoori Chicken"
+    ) {
+      reconcileTandooriPrep(candidate.days);
+    }
 
     const preferences = parsePreferences(preferencesDb.data.preferences);
     const recentMenus = menusDb.data.menus
@@ -381,16 +480,85 @@ export async function modifyMenuDay({ menuId, day, main_dish, side_chicken, prep
       preferences,
       candidate.week_start,
       recentMenus,
-      { requiredDays: null }
+      { requiredDays: null, mode: "manual" }
     );
     if (errors.length) {
-      throw new Error(`Menu change violates guardrails: ${errors.join("; ")}`);
+      throw new Error(`Menu change violates integrity constraints: ${errors.join("; ")}`);
     }
 
     storedMenu.days = candidate.days;
+    const action = appendMenuChange(storedMenu, {
+      type: "modify_menu_day",
+      day: canonicalDay,
+      before,
+      after: entry ? structuredClone(entry) : null,
+      summary: describeMenuDayChange(canonicalDay, before, entry),
+      context
+    });
     await menusDb.write();
-    return structuredClone(storedMenu);
+    return menuResult(storedMenu, action);
   });
+}
+
+function describeMenuDayChange(day, before, after) {
+  if (!after) return `Unscheduled ${day}.`;
+  if (!before && after.meal_status !== "planned") {
+    return `Marked ${day} as ${after.meal_status.replaceAll("_", " ")}.`;
+  }
+  if (!before) return `Scheduled ${day}: ${after.main_dish}.`;
+  const beforeStatus = before.meal_status ?? "planned";
+  if (beforeStatus !== after.meal_status) {
+    if (after.meal_status !== "planned") {
+      return `Changed ${day} from ${beforeStatus.replaceAll("_", " ")} to ${after.meal_status.replaceAll("_", " ")}.`;
+    }
+    return `Planned ${day}: ${after.main_dish}.`;
+  }
+  const changes = [];
+  if (before.main_dish !== after.main_dish) {
+    changes.push(`main ${before.main_dish ?? "none"} → ${after.main_dish ?? "none"}`);
+  }
+  if (before.side_chicken !== after.side_chicken) {
+    changes.push(`side ${before.side_chicken ?? "none"} → ${after.side_chicken ?? "none"}`);
+  }
+  if (before.prep_notes !== after.prep_notes) changes.push("prep notes updated");
+  if (before.cook_notes !== after.cook_notes) changes.push("cook notes updated");
+  return `Updated ${day}: ${changes.join("; ")}.`;
+}
+
+function auditActor(actor) {
+  if (!actor) return null;
+  return {
+    telegram_user_id: String(actor.telegram_user_id ?? "unknown").slice(0, 100),
+    display_name: String(actor.display_name ?? "Unknown").slice(0, 100)
+  };
+}
+
+function appendMenuChange(menu, { context = {}, ...change }) {
+  const event = {
+    id: randomUUID(),
+    request_id: context.requestId ? String(context.requestId).slice(0, 200) : null,
+    source: String(context.source ?? "internal").slice(0, 100),
+    actor: auditActor(context.actor),
+    timestamp: new Date().toISOString(),
+    ...change
+  };
+  menu.schema_version = MENU_SCHEMA_VERSION;
+  menu.updated_at = event.timestamp;
+  menu.changes = [...(menu.changes ?? []), event].slice(-100);
+  return event;
+}
+
+function repeatedMenuAction(menu, requestId) {
+  if (!requestId) return null;
+  return (menu.changes ?? []).find(
+    (change) => change.request_id === String(requestId)
+  ) ?? null;
+}
+
+function menuResult(menu, action) {
+  const result = structuredClone(menu);
+  result.action = structuredClone(action);
+  return result;
 }
 
 function canonicalWeekday(value) {
@@ -423,7 +591,7 @@ async function validateManualMenuChange({
     parsePreferences(preferences),
     candidate.week_start,
     recentMenus,
-    { requiredDays: null }
+    { requiredDays: null, mode: "manual" }
   );
   if (errors.length) {
     throw new Error(`Menu change violates guardrails: ${errors.join("; ")}`);
@@ -454,7 +622,7 @@ function reconcileTandooriPrep(days) {
   ].filter(Boolean).join("\n");
 }
 
-export async function swapMenuDays({ menuId, firstDay, secondDay }) {
+export async function swapMenuDays({ menuId, firstDay, secondDay }, context = {}) {
   const first = canonicalWeekday(firstDay);
   const second = canonicalWeekday(secondDay);
   if (first === second) throw new Error("Choose two different menu days to swap.");
@@ -464,6 +632,8 @@ export async function swapMenuDays({ menuId, firstDay, secondDay }) {
     const preferencesDb = db("preferences");
     await Promise.all([menusDb.read(), dishesDb.read(), preferencesDb.read()]);
     const storedMenu = findStoredMenu(menusDb.data.menus, menuId);
+    const repeated = repeatedMenuAction(storedMenu, context.requestId);
+    if (repeated) return menuResult(storedMenu, repeated);
     const candidate = {
       week_start: storedMenu.week_start,
       days: structuredClone(storedMenu.days)
@@ -473,6 +643,8 @@ export async function swapMenuDays({ menuId, firstDay, secondDay }) {
     if (!firstEntry || !secondEntry) {
       throw new Error("Both weekdays must already be scheduled to swap them.");
     }
+    const firstBefore = structuredClone(firstEntry);
+    const secondBefore = structuredClone(secondEntry);
     const firstMeal = { ...firstEntry, day: second };
     const secondMeal = { ...secondEntry, day: first };
     Object.assign(firstEntry, secondMeal);
@@ -485,12 +657,19 @@ export async function swapMenuDays({ menuId, firstDay, secondDay }) {
       preferences: preferencesDb.data.preferences
     });
     storedMenu.days = candidate.days;
+    const action = appendMenuChange(storedMenu, {
+      type: "swap_menu_days",
+      before: { first: firstBefore, second: secondBefore },
+      after: { first: structuredClone(firstEntry), second: structuredClone(secondEntry) },
+      summary: `Swapped the complete ${first} and ${second} plans.`,
+      context
+    });
     await menusDb.write();
-    return structuredClone(storedMenu);
+    return menuResult(storedMenu, action);
   });
 }
 
-export async function moveMenuDay({ menuId, fromDay, toDay }) {
+export async function moveMenuDay({ menuId, fromDay, toDay }, context = {}) {
   const from = canonicalWeekday(fromDay);
   const to = canonicalWeekday(toDay);
   if (from === to) throw new Error("The meal is already scheduled on that day.");
@@ -500,6 +679,8 @@ export async function moveMenuDay({ menuId, fromDay, toDay }) {
     const preferencesDb = db("preferences");
     await Promise.all([menusDb.read(), dishesDb.read(), preferencesDb.read()]);
     const storedMenu = findStoredMenu(menusDb.data.menus, menuId);
+    const repeated = repeatedMenuAction(storedMenu, context.requestId);
+    if (repeated) return menuResult(storedMenu, repeated);
     const candidate = {
       week_start: storedMenu.week_start,
       days: structuredClone(storedMenu.days)
@@ -520,8 +701,15 @@ export async function moveMenuDay({ menuId, fromDay, toDay }) {
       preferences: preferencesDb.data.preferences
     });
     storedMenu.days = candidate.days;
+    const action = appendMenuChange(storedMenu, {
+      type: "move_menu_day",
+      before: { day: from, entry: { ...structuredClone(entry), day: from } },
+      after: { day: to, entry: structuredClone(entry) },
+      summary: `Moved the complete ${from} plan to ${to}.`,
+      context
+    });
     await menusDb.write();
-    return structuredClone(storedMenu);
+    return menuResult(storedMenu, action);
   });
 }
 

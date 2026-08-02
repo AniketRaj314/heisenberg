@@ -36,6 +36,12 @@ export function validateRuntimeConfig(env = process.env) {
   if (env.PORT && (!Number.isInteger(Number(env.PORT)) || Number(env.PORT) <= 0)) {
     errors.push("PORT must be a positive integer");
   }
+  if (
+    env.OPENAI_AGENT_REASONING_EFFORT &&
+    !["none", "low", "medium", "high"].includes(env.OPENAI_AGENT_REASONING_EFFORT)
+  ) {
+    errors.push("OPENAI_AGENT_REASONING_EFFORT must be none, low, medium, or high");
+  }
   try {
     new Intl.DateTimeFormat("en-US", {
       timeZone: env.TZ || "Asia/Kolkata"

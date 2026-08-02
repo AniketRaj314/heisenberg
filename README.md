@@ -1,11 +1,12 @@
 # Heisenberg
 
-Heisenberg is an AI-assisted weekly meal planner—because he was *the cook*. It creates a five-day menu every Friday, keeps rotation history in small JSON files, posts drafts to a dedicated Telegram group, and lets the household change the plan conversationally.
+Heisenberg is an AI-assisted weekly meal planner—because he was *the cook*. It generates a five-dinner starting draft every Friday, keeps rotation history in small JSON files, posts drafts to a dedicated Telegram group, and lets the household reshape the week conversationally.
 
 ## What it does
 
 - Generates Monday, Tuesday, Thursday, Friday, and Saturday menus at 6:00 PM IST every Friday.
 - Validates generated menus against dish categories and household guardrails before saving them.
+- Lets explicit edits add any weekday or mark it as planned, dining out, skipped, or unscheduled without forcing the generated five-day template.
 - Keeps dated history for meals that were actually eaten, including ad-hoc midweek meals outside an active menu.
 - Stores dishes, menus, preferences, durable scoped memories, and the last 100 conversations with lowdb.
 - Runs a dedicated Telegram bot in a dedicated Telegram group.
@@ -15,6 +16,8 @@ Heisenberg is an AI-assisted weekly meal planner—because he was *the cook*. It
 - In groups, responds only to slash commands, direct `@bot` mentions, or replies to one of its messages; interactive responses are linked to the triggering Telegram message.
 - Tracks each speaker by stable Telegram user ID and stores their display name with conversation history, keeping Aniket and his brother distinct.
 - Retrieves relevant free-form memories automatically, separating shared household context from each person’s private context.
+- Supplies shared household memories as soft context to automatic menu generation, so practical guidance does not need a hardcoded rule format.
+- Records bounded menu-change receipts with source, actor, request ID, timestamp, and before/after values.
 
 ## Local setup
 
@@ -108,7 +111,7 @@ The MCP endpoint shares the application’s Railway `PORT` at `/mcp` and require
 
 ## Environment variables
 
-See `.env.example`. `OPENAI_MENU_MODEL`, `OPENAI_AGENT_MODEL`, and `TZ` are optional. Menu generation defaults to `gpt-5.6-luna`, conversational tool use defaults to `gpt-5.6-terra`, and the timezone defaults to `Asia/Kolkata`.
+See `.env.example`. `OPENAI_MENU_MODEL`, `OPENAI_AGENT_MODEL`, `OPENAI_AGENT_REASONING_EFFORT`, and `TZ` are optional. Menu generation defaults to `gpt-5.6-luna`, conversational tool use defaults to `gpt-5.6-terra` with low reasoning effort, and the timezone defaults to `Asia/Kolkata`.
 
 For backward compatibility, the application still accepts `OPENAI_MODEL` as a shared fallback when a task-specific model variable is absent.
 
@@ -121,6 +124,10 @@ Custom rules use deterministic formats so the server can enforce them after AI g
 - `require_main:<dish>`
 - `not_on:<day>:<dish>`
 - `pair:<dish>|<dish>`
+
+These are generation policies, not immutable properties of stored menus. The AI applies them when creating a draft, while a direct user edit is allowed to override rotation, category quotas, history avoidance, and other planning defaults. Storage continues to enforce valid active dish references, unique weekdays, and valid main/side roles.
+
+Stored menus use schema version 2. Existing menu JSON is migrated automatically on startup by marking legacy entries as `planned`; no existing dishes or notes are discarded.
 
 ## Local release check
 
@@ -148,3 +155,4 @@ Then verify `/health`, `/menu`, `/generate`, a natural-language menu change, `/c
 - `src/telegram/bot.js` — Telegram commands, group restriction, and backups.
 - `src/telegram/format.js` — readable Telegram output.
 - `test/generator.test.js` — core date and validation checks.
+- `docs/agent-flexibility-audit.md` — agent/storage boundary review and follow-up roadmap.

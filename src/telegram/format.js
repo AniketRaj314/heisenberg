@@ -11,6 +11,14 @@ export function formatMenu(menu) {
     (a, b) => WEEKDAYS.indexOf(a.day) - WEEKDAYS.indexOf(b.day)
   );
   for (const entry of scheduledDays) {
+    const mealStatus = entry.meal_status ?? "planned";
+    if (mealStatus !== "planned") {
+      lines.push(`*${entry.day}* · ${mealStatus.replaceAll("_", " ")}`);
+      if (entry.prep_notes) lines.push(`Note: ${entry.prep_notes}`);
+      if (entry.cook_notes) lines.push(`Note: ${entry.cook_notes}`);
+      lines.push("");
+      continue;
+    }
     lines.push(`*${entry.day}* · ${entry.slot_type.replaceAll("_", " ")}`);
     lines.push(`Main: ${entry.main_dish}`);
     if (entry.side_chicken) lines.push(`Side: ${entry.side_chicken}`);

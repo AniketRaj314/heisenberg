@@ -11,6 +11,7 @@ import { bearerTokenMatches } from "../src/auth/bearer.js";
 import { parsePreferenceUpdate } from "../src/domain/preferences.js";
 import { createRateLimiter } from "../src/security/rateLimit.js";
 import { localDateISO } from "../src/time.js";
+import { buildMenuGenerationPrompt } from "../src/prompts/menu_generation.js";
 
 const dishes = [
   ["Whole Wheat Hakka Noodles", "carb_heavy"],
@@ -180,6 +181,25 @@ test("preference updates reject unknown keys, wrong types, and free-form custom 
     parsePreferenceUpdate("custom_rules", ["never:mushroom", "not_on:monday:Paneer Chilli"]),
     ["never:mushroom", "not_on:monday:Paneer Chilli"]
   );
+});
+
+test("automatic generation receives free-form household planning context", () => {
+  const prompt = buildMenuGenerationPrompt({
+    weekStart: "2026-08-03",
+    dishes: [],
+    preferences: {
+      never_use: [],
+      max_paneer_per_week: 1,
+      max_carb_heavy_per_week: 1,
+      cross_week_avoid_last_n_weeks: 3,
+      custom_rules: []
+    },
+    recentMenus: [],
+    householdContext: [{ content: "Prefer easy induction-friendly dinners" }]
+  });
+  assert.match(prompt, /HOUSEHOLD PLANNING CONTEXT/);
+  assert.match(prompt, /easy induction-friendly dinners/);
+  assert.match(prompt, /soft guidance/);
 });
 
 test("generation retries a failed completion and returns a validated candidate", async () => {

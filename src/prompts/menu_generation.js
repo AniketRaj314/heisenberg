@@ -4,6 +4,7 @@ export function buildMenuGenerationPrompt({
   preferences,
   recentMenus,
   recentMeals = [],
+  householdContext = [],
   previousDraft = null
 }) {
   return `Create the weekly dinner menu for a household of two.
@@ -23,6 +24,9 @@ ${JSON.stringify(recentMenus)}
 
 RECENT ACTUAL MEALS (including ad-hoc meals outside an active menu):
 ${JSON.stringify(recentMeals)}
+
+HOUSEHOLD PLANNING CONTEXT (soft guidance, newest first):
+${JSON.stringify(householdContext)}
 
 CURRENT DRAFT BEING REPLACED:
 ${JSON.stringify(previousDraft)}
@@ -50,6 +54,7 @@ GUARDRAILS:
 - Use RECENT ACTUAL MEALS to avoid unnecessarily repeating mains or chicken sides eaten on recent consecutive dates.
 - When CURRENT DRAFT BEING REPLACED is present, this is a genuine regeneration: choose new main dishes rather than returning or merely reshuffling the same menu. Change at least three of the five mains when eligible alternatives exist.
 - Treat every entry in preferences.custom_rules as mandatory.
+- Apply relevant HOUSEHOLD PLANNING CONTEXT using culinary judgment. It is soft guidance unless the memory clearly records a household requirement.
 - Days are dynamic; do not fix a slot to a particular weekday.
 
 Return valid JSON only (no markdown or backticks):

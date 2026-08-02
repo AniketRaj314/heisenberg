@@ -86,36 +86,40 @@ function createServer(version) {
   );
   register(
     "modify_menu_day",
-    "Modify fields for a day in the latest menu.",
+    "Upsert, change, mark unavailable, or unschedule any weekday in the latest menu.",
     {
       menu_id: z.string().uuid().optional(),
       day: z.enum(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]),
+      meal_status: z.enum(["planned", "dining_out", "skipped", "unscheduled"]).optional(),
       main_dish: z.string().optional(),
       side_chicken: z.string().nullable().optional(),
       prep_notes: z.string().optional(),
-      cook_notes: z.string().optional()
+      cook_notes: z.string().optional(),
+      request_id: z.string().min(1).max(200).optional()
     },
-    (args) => executeTool("modify_menu_day", args)
+    (args) => executeTool("modify_menu_day", args, { source: "mcp", requestId: args.request_id })
   );
   register(
     "swap_menu_days",
-    "Atomically swap the complete meals assigned to two scheduled weekdays.",
+    "Atomically swap complete day plans only when the user explicitly requests the swap.",
     {
       menu_id: z.string().uuid().optional(),
       first_day: z.enum(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]),
-      second_day: z.enum(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+      second_day: z.enum(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]),
+      request_id: z.string().min(1).max(200).optional()
     },
-    (args) => executeTool("swap_menu_days", args)
+    (args) => executeTool("swap_menu_days", args, { source: "mcp", requestId: args.request_id })
   );
   register(
     "move_menu_day",
-    "Move a complete scheduled meal to an unscheduled weekday without regenerating.",
+    "Move a complete day plan only when the user explicitly requests its destination.",
     {
       menu_id: z.string().uuid().optional(),
       from_day: z.enum(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]),
-      to_day: z.enum(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+      to_day: z.enum(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]),
+      request_id: z.string().min(1).max(200).optional()
     },
-    (args) => executeTool("move_menu_day", args)
+    (args) => executeTool("move_menu_day", args, { source: "mcp", requestId: args.request_id })
   );
   register(
     "get_menu_history",

@@ -41,3 +41,17 @@ test("production configuration fails closed on missing integrations and weak sec
     })
   );
 });
+
+test("agent reasoning effort accepts only supported values", () => {
+  const base = {
+    API_BEARER_TOKEN: "local-api-token",
+    MCP_BEARER_TOKEN: "local-mcp-token"
+  };
+  assert.doesNotThrow(() =>
+    validateRuntimeConfig({ ...base, OPENAI_AGENT_REASONING_EFFORT: "low" })
+  );
+  assert.throws(
+    () => validateRuntimeConfig({ ...base, OPENAI_AGENT_REASONING_EFFORT: "maximum" }),
+    /OPENAI_AGENT_REASONING_EFFORT/
+  );
+});

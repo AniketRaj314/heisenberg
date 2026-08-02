@@ -38,16 +38,19 @@ export function buildMenuFacts(menu, dishes) {
       "fine, but they are not a second main dish."
   };
   if (!menu) return { menu_available: false, ...compositionFacts };
-  const scheduledDays = [...menu.days].sort(
+  const plannedDays = menu.days.filter(
+    (entry) => (entry.meal_status ?? "planned") === "planned"
+  );
+  const scheduledDays = [...plannedDays].sort(
     (a, b) => WEEKDAYS.indexOf(a.day) - WEEKDAYS.indexOf(b.day)
   );
   const scheduledDayNames = scheduledDays.map((entry) => entry.day);
   const activeDrySides = dryChickenSides;
   const dishesByName = new Map(dishes.map((dish) => [dish.name, dish]));
-  const usedDrySides = menu.days
+  const usedDrySides = plannedDays
     .map((entry) => entry.side_chicken)
     .filter(Boolean);
-  const uncoveredEligibleDays = menu.days
+  const uncoveredEligibleDays = plannedDays
     .filter(
       (entry) => {
         const mainCategory = dishesByName.get(entry.main_dish)?.category;
@@ -77,6 +80,12 @@ export function buildMenuFacts(menu, dishes) {
   return {
     menu_available: true,
     ...compositionFacts,
+    flexible_schedule_rule:
+      "Any weekday may be planned, marked dining out, marked skipped, or unscheduled. " +
+      "Direct household edits override the generated five-day template.",
+    non_planned_days: menu.days
+      .filter((entry) => (entry.meal_status ?? "planned") !== "planned")
+      .map((entry) => ({ day: entry.day, meal_status: entry.meal_status })),
     side_allocation_rule:
       "Chicken-main days have no catalogued side. Every other day should have one " +
       "active dry-chicken side. A side may repeat during the week, but not on " +
@@ -109,6 +118,45 @@ export function normalizeTelegramSender(sender = {}) {
     display_name: displayName,
     username
   };
+}
+
+export function resolveAgentAnswer(content, completedActions = []) {
+  const answer = String(content ?? "").trim();
+  if (answer) return answer;
+  if (completedActions.length) return completedActions.join("\n");
+  throw new Error("The AI returned an empty response without completing an action.");
+}
+
+export function summarizeToolAction(name, args, result) {
+  if (result?.action?.summary) return result.action.summary;
+  switch (name) {
+    case "add_dish":
+      return `Added ${result.name} to the dish list.`;
+    case "disable_dish":
+      return `Disabled ${result.name}.`;
+    case "update_dish":
+      return `Updated ${result.name} in the dish list.`;
+    case "update_preference":
+      return `Updated the ${args.key} preference.`;
+    case "regenerate_menu":
+      return `Generated a new draft menu for the week of ${result.week_start}.`;
+    case "confirm_menu":
+      return `Confirmed the menu for the week of ${result.week_start}.`;
+    case "swap_menu_days":
+      return `Swapped the complete ${args.first_day} and ${args.second_day} meals.`;
+    case "move_menu_day":
+      return `Moved the complete meal from ${args.from_day} to ${args.to_day}.`;
+    case "record_meal":
+      return `Recorded the meal for ${result.date}.`;
+    case "forget_meal":
+      return "Removed the requested meal-history record.";
+    case "remember_context":
+      return "Saved that for future meal-planning conversations.";
+    case "forget_context":
+      return "Removed the requested saved context.";
+    default:
+      return null;
+  }
 }
 
 function historyUserContent(item) {
@@ -185,6 +233,7 @@ export async function runAgent(userMessage, telegramSender = {}) {
   }));
 
   let answer = "";
+  const completedActions = [];
   for (let turn = 0; turn < 6; turn += 1) {
     const completion = await client.chat.completions.create({
       model:
@@ -194,23 +243,26 @@ export async function runAgent(userMessage, telegramSender = {}) {
       messages,
       tools,
       tool_choice: "auto",
-      reasoning_effort: "none",
+      reasoning_effort: process.env.OPENAI_AGENT_REASONING_EFFORT || "low",
       max_completion_tokens: 1800
     });
     const message = completion.choices[0]?.message;
     if (!message) throw new Error("The AI returned no response.");
     messages.push(message);
     if (!message.tool_calls?.length) {
-      answer = message.content || "Done.";
+      answer = resolveAgentAnswer(message.content, completedActions);
       break;
     }
     for (const call of message.tool_calls) {
       try {
+        const args = JSON.parse(call.function.arguments || "{}");
         const result = await executeTool(
           call.function.name,
-          JSON.parse(call.function.arguments || "{}"),
-          { actor: currentSender, source: "telegram-agent" }
+          args,
+          { actor: currentSender, source: "telegram-agent", requestId: call.id }
         );
+        const actionSummary = summarizeToolAction(call.function.name, args, result);
+        if (actionSummary) completedActions.push(actionSummary);
         messages.push({
           role: "tool",
           tool_call_id: call.id,
