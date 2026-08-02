@@ -7,7 +7,8 @@ import {
   summarizeToolAction
 } from "../src/telegram/agent.js";
 import { shouldRespondToMessage } from "../src/telegram/bot.js";
-import { formatAgentResponse } from "../src/telegram/format.js";
+import { formatAgentResponse, formatMenu } from "../src/telegram/format.js";
+import { AGENT_SYSTEM_PROMPT } from "../src/prompts/agent_system.js";
 
 test("agent Markdown is converted to safe Telegram HTML", () => {
   assert.equal(
@@ -18,6 +19,37 @@ test("agent Markdown is converted to safe Telegram HTML", () => {
     formatAgentResponse("<script>alert('x')</script>"),
     "&lt;script&gt;alert('x')&lt;/script&gt;"
   );
+});
+
+test("menus render dining-out and skipped days without fake dishes", () => {
+  const rendered = formatMenu({
+    week_start: "2026-08-03",
+    status: "draft",
+    days: [
+      {
+        day: "Wednesday",
+        meal_status: "dining_out",
+        slot_type: null,
+        main_dish: null,
+        side_chicken: null,
+        prep_notes: "",
+        cook_notes: "Dinner with friends"
+      },
+      {
+        day: "Thursday",
+        meal_status: "planned",
+        slot_type: "sabzi",
+        main_dish: "Egg Curry",
+        side_chicken: "Cajun Chicken",
+        prep_notes: "",
+        cook_notes: ""
+      }
+    ]
+  });
+  assert.match(rendered, /Wednesday\* · dining out/);
+  assert.match(rendered, /Note: Dinner with friends/);
+  assert.match(rendered, /Thursday\* · sabzi/);
+  assert.doesNotMatch(rendered, /Main: null/);
 });
 
 test("agent responses never turn an empty mutation result into a vague success", () => {
@@ -38,6 +70,12 @@ test("agent responses never turn an empty mutation result into a vague success",
     ),
     "Moved the complete meal from Thursday to Wednesday."
   );
+});
+
+test("agent instructions forbid unrequested meal relocation", () => {
+  assert.match(AGENT_SYSTEM_PROMPT, /principle of least change/i);
+  assert.match(AGENT_SYSTEM_PROMPT, /only mark Saturday dining_out/i);
+  assert.match(AGENT_SYSTEM_PROMPT, /Call move_menu_day only when the user explicitly/i);
 });
 
 test("menu facts expose valid non-consecutive side choices", () => {

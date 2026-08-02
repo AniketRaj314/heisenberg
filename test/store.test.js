@@ -1,11 +1,30 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 const dataDir = await mkdtemp(path.join(os.tmpdir(), "heisenberg-store-"));
 process.env.DATA_DIR = dataDir;
+await writeFile(
+  path.join(dataDir, "menus.json"),
+  JSON.stringify({
+    menus: [{
+      id: "legacy-menu",
+      week_start: "2020-01-06",
+      generated_at: "2020-01-01T00:00:00.000Z",
+      status: "confirmed",
+      days: [{
+        day: "Monday",
+        slot_type: "sabzi",
+        main_dish: "Egg Curry",
+        side_chicken: null,
+        prep_notes: "",
+        cook_notes: ""
+      }]
+    }]
+  })
+);
 const store = await import("../src/db/store.js");
 const { executeTool } = await import("../src/mcp/tools.js");
 
@@ -28,6 +47,14 @@ const dishInputs = [
 for (const [name, category] of dishInputs) {
   await store.addDish({ name, category });
 }
+
+test("legacy menus migrate to the flexible schema without losing meals", async () => {
+  const legacy = (await store.getMenus()).find((menu) => menu.id === "legacy-menu");
+  assert.equal(legacy.schema_version, 2);
+  assert.deepEqual(legacy.changes, []);
+  assert.equal(legacy.days[0].meal_status, "planned");
+  assert.equal(legacy.days[0].main_dish, "Egg Curry");
+});
 
 const validMenu = {
   week_start: "2026-07-27",
@@ -75,6 +102,25 @@ test("menu changes require a concrete mutation", async () => {
   assert.deepEqual(after.days, before.days);
 });
 
+test("editing notes does not rewrite a generated random slot", async () => {
+  const menu = await store.getLatestDraft();
+  const otherDays = menu.days
+    .filter((entry) => entry.day !== "Saturday")
+    .map((entry) => structuredClone(entry));
+  const changed = await store.modifyMenuDay({
+    menuId: menu.id,
+    day: "Saturday",
+    cook_notes: "Keep it quick"
+  });
+  const saturday = changed.days.find((entry) => entry.day === "Saturday");
+  assert.equal(saturday.slot_type, "random");
+  assert.equal(saturday.main_dish, "Egg Bhurji");
+  assert.deepEqual(
+    changed.days.filter((entry) => entry.day !== "Saturday"),
+    otherDays
+  );
+});
+
 test("explicit menu edits can override generation policy and return a receipt", async () => {
   const before = await store.getLatestDraft();
   const changed = await store.modifyMenuDay({
@@ -107,6 +153,76 @@ test("explicit menu edits can override generation policy and return a receipt", 
     }),
     /invalid side chicken/
   );
+});
+
+test("marking a planned day unavailable does not relocate its meal", async () => {
+  const before = await store.getLatestDraft();
+  const unchangedDays = before.days
+    .filter((entry) => entry.day !== "Saturday")
+    .map((entry) => structuredClone(entry));
+  const changed = await store.modifyMenuDay({
+    menuId: before.id,
+    day: "Saturday",
+    meal_status: "dining_out",
+    cook_notes: "Hackathon"
+  }, { source: "test", requestId: "saturday-dining-out" });
+
+  const saturday = changed.days.find((entry) => entry.day === "Saturday");
+  assert.equal(saturday.meal_status, "dining_out");
+  assert.equal(saturday.main_dish, null);
+  assert.deepEqual(
+    changed.days.filter((entry) => entry.day !== "Saturday"),
+    unchangedDays
+  );
+});
+
+test("any weekday can be unavailable, planned later, or unscheduled idempotently", async () => {
+  const menu = await store.getLatestDraft();
+  const context = {
+    source: "test",
+    requestId: "add-sunday-once",
+    actor: { telegram_user_id: "202", display_name: "Rushil" }
+  };
+  const diningOut = await store.modifyMenuDay({
+    menuId: menu.id,
+    day: "Sunday",
+    meal_status: "dining_out",
+    cook_notes: "Dinner with family"
+  }, context);
+  const sundayOut = diningOut.days.find((entry) => entry.day === "Sunday");
+  assert.equal(sundayOut.meal_status, "dining_out");
+  assert.equal(sundayOut.main_dish, null);
+  assert.match(diningOut.action.summary, /Marked Sunday as dining out/);
+  assert.equal(diningOut.action.actor.telegram_user_id, "202");
+
+  const repeated = await store.modifyMenuDay({
+    menuId: menu.id,
+    day: "Sunday",
+    meal_status: "dining_out",
+    cook_notes: "Dinner with family"
+  }, context);
+  assert.equal(repeated.action.id, diningOut.action.id);
+  assert.equal(repeated.changes.length, diningOut.changes.length);
+
+  const planned = await store.modifyMenuDay({
+    menuId: menu.id,
+    day: "Sunday",
+    meal_status: "planned",
+    main_dish: "Egg Curry",
+    side_chicken: "Cajun Chicken"
+  }, { source: "test", requestId: "plan-sunday" });
+  const sundayPlanned = planned.days.find((entry) => entry.day === "Sunday");
+  assert.equal(sundayPlanned.meal_status, "planned");
+  assert.equal(sundayPlanned.slot_type, "sabzi");
+  assert.equal(sundayPlanned.main_dish, "Egg Curry");
+
+  const unscheduled = await store.modifyMenuDay({
+    menuId: menu.id,
+    day: "Sunday",
+    meal_status: "unscheduled"
+  }, { source: "test", requestId: "remove-sunday" });
+  assert.ok(!unscheduled.days.some((entry) => entry.day === "Sunday"));
+  assert.equal(unscheduled.action.summary, "Unscheduled Sunday.");
 });
 
 test("confirmed upcoming menu remains available as relevant agent context", async () => {

@@ -91,22 +91,25 @@ export const toolDefinitions = [
   {
     name: "modify_menu_day",
     description:
-      "Apply a concrete edit to one day in the latest menu. For an open-ended " +
-      "replacement, first choose the exact active dish, then pass it as main_dish. " +
-      "Never call this tool with only day; at least one changed field is required.",
+      "Upsert, change, or unschedule any weekday in the latest menu. Use meal_status " +
+      "for planned, dining_out, skipped, or unscheduled. For an open-ended replacement, " +
+      "choose the exact active dish and pass it as main_dish. Never call with only day.",
     parameters: {
       type: "object",
       properties: {
         menu_id: { type: "string" },
         day: { type: "string" },
+        meal_status: { type: "string", enum: ["planned", "dining_out", "skipped", "unscheduled"] },
         main_dish: { type: "string" },
         side_chicken: { type: ["string", "null"] },
         prep_notes: { type: "string" },
-        cook_notes: { type: "string" }
+        cook_notes: { type: "string" },
+        request_id: { type: "string" }
       },
       required: ["day"],
       anyOf: [
         { required: ["main_dish"] },
+        { required: ["meal_status"] },
         { required: ["side_chicken"] },
         { required: ["prep_notes"] },
         { required: ["cook_notes"] }
@@ -118,13 +121,14 @@ export const toolDefinitions = [
     description:
       "Atomically swap the complete scheduled meals on two existing weekdays, " +
       "including slot type, main, chicken side, prep notes, and cook notes. " +
-      "Use this for requests such as 'swap Tuesday and Thursday'; do not regenerate.",
+      "Use only when the user explicitly asks to swap both days; do not infer a swap.",
     parameters: {
       type: "object",
       properties: {
         menu_id: { type: "string" },
         first_day: { type: "string", enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] },
-        second_day: { type: "string", enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] }
+        second_day: { type: "string", enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] },
+        request_id: { type: "string" }
       },
       required: ["first_day", "second_day"]
     }
@@ -134,13 +138,15 @@ export const toolDefinitions = [
     description:
       "Move a complete scheduled meal from one weekday to a currently unscheduled " +
       "weekday, preserving its slot type, main, side, and notes. Use this when plans " +
-      "change, such as moving Thursday's chef meal to Wednesday. Do not regenerate.",
+      "change and the user explicitly asks for the destination. Never move a meal merely " +
+      "because its original day is dining out or skipped.",
     parameters: {
       type: "object",
       properties: {
         menu_id: { type: "string" },
         from_day: { type: "string", enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] },
-        to_day: { type: "string", enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] }
+        to_day: { type: "string", enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] },
+        request_id: { type: "string" }
       },
       required: ["from_day", "to_day"]
     }
@@ -256,11 +262,17 @@ function mealScope(scope, context) {
   throw new Error("Meal scope must be personal or household.");
 }
 
+function compactMenuResult(menu) {
+  if (!menu) return menu;
+  const { changes: _changes, ...result } = menu;
+  return result;
+}
+
 export async function executeTool(name, args = {}, context = {}) {
   switch (name) {
     case "get_current_menu": {
       const weekStart = getMonday(-1);
-      return getRelevantMenu(weekStart);
+      return compactMenuResult(await getRelevantMenu(weekStart));
     }
     case "get_dish_list":
       return getDishes();
@@ -279,31 +291,33 @@ export async function executeTool(name, args = {}, context = {}) {
     case "confirm_menu":
       return confirmMenu(args.menu_id);
     case "modify_menu_day":
-      return modifyMenuDay({
+      return compactMenuResult(await modifyMenuDay({
         menuId: args.menu_id,
         day: args.day,
+        meal_status: args.meal_status,
         main_dish: args.main_dish,
         side_chicken: args.side_chicken,
         prep_notes: args.prep_notes,
         cook_notes: args.cook_notes
-      });
+      }, { ...context, requestId: context.requestId ?? args.request_id }));
     case "swap_menu_days":
-      return swapMenuDays({
+      return compactMenuResult(await swapMenuDays({
         menuId: args.menu_id,
         firstDay: args.first_day,
         secondDay: args.second_day
-      });
+      }, { ...context, requestId: context.requestId ?? args.request_id }));
     case "move_menu_day":
-      return moveMenuDay({
+      return compactMenuResult(await moveMenuDay({
         menuId: args.menu_id,
         fromDay: args.from_day,
         toDay: args.to_day
-      });
+      }, { ...context, requestId: context.requestId ?? args.request_id }));
     case "get_menu_history": {
       const menus = await getMenus();
       return menus
         .sort((a, b) => b.week_start.localeCompare(a.week_start))
-        .slice(0, args.weeks ?? 4);
+        .slice(0, args.weeks ?? 4)
+        .map(compactMenuResult);
     }
     case "record_meal":
       return recordMeal({

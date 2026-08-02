@@ -4,6 +4,7 @@ import {
   getMealHistory,
   getMenus,
   getPreferences,
+  searchContext,
   saveMenu
 } from "../db/store.js";
 import { validateMenu } from "../domain/menu.js";
@@ -112,8 +113,11 @@ export function validateRegenerationDiversity(
   preferences
 ) {
   if (!previousDraft?.days?.length || !candidate?.days?.length) return [];
+  const previousPlannedDays = previousDraft.days.filter(
+    (entry) => (entry.meal_status ?? "planned") === "planned" && entry.main_dish
+  );
   const previousMainNames = new Set(
-    previousDraft.days.map((entry) => entry.main_dish)
+    previousPlannedDays.map((entry) => entry.main_dish)
   );
   const banned = [
     ...(preferences.never_use ?? []),
@@ -122,7 +126,7 @@ export function validateRegenerationDiversity(
       .map((rule) => String(rule).slice("never:".length))
   ].map((term) => term.trim().toLowerCase());
   const active = dishes.filter((dish) => dish.active);
-  const changeableSlots = previousDraft.days.filter((entry) =>
+  const changeableSlots = previousPlannedDays.filter((entry) =>
     active.some(
       (dish) =>
         dish.category !== "dry_chicken" &&
@@ -147,11 +151,12 @@ async function generateMenuInternal({
   notify,
   completionFn
 } = {}) {
-  const [dishes, preferences, allMenus, recentMeals] = await Promise.all([
+  const [dishes, preferences, allMenus, recentMeals, householdContext] = await Promise.all([
     getDishes({ activeOnly: true }),
     getPreferences(),
     getMenus(),
-    getMealHistory({ scopes: ["household"], limit: 30 })
+    getMealHistory({ scopes: ["household"], limit: 30 }),
+    searchContext({ scopes: ["household"], query: "", limit: 20 })
   ]);
   const recentMenus = allMenus
     .filter((menu) => menu.week_start < weekStart)
@@ -171,6 +176,7 @@ async function generateMenuInternal({
     preferences,
     recentMenus,
     recentMeals,
+    householdContext,
     previousDraft
   });
 

@@ -35,12 +35,26 @@ The prompt described planning rules as universally mandatory. It now states that
 
 The Telegram agent used `reasoning_effort: "none"`. This is now configurable through `OPENAI_AGENT_REASONING_EFFORT` and defaults to `low`, giving multi-step tool decisions some planning budget without materially increasing normal usage.
 
-## Remaining constraints worth revisiting
+### 6. The agent could overreach while trying to preserve the generated plan
 
-- A menu still has exactly five entries. Supporting arbitrary numbers of meals, skipped days, lunch/dinner slots, or “dining out” as a first-class state needs a versioned menu schema rather than prompt changes.
-- Dish categories still encode meal composition. This is useful today, but a future model could replace fixed categories with flexible roles or meal components.
-- Preferences use a small declarative rule language. Durable free-form memory covers softer context, but complex policies may eventually need typed conditions and priorities.
-- The agent currently has broad write authority inside one trusted Telegram group. Higher-impact future tools should keep audit metadata and idempotency keys.
+When told that Saturday dinner was not needed, the agent moved Saturday's meal to Wednesday even though no relocation was requested. This preserved the generated meal count at the cost of violating user intent.
+
+The agent now follows a least-change contract. Unavailability changes only the named day; moving, swapping, replacing, or regenerating requires explicit intent. First-class dining-out and skipped states mean deleting a planned meal is a valid result and no compensating meal is required.
+
+## Audit follow-up integrated in this branch
+
+- Stored menus now use a versioned flexible schema with zero to seven dinner entries. Any weekday can be planned, dining out, skipped, or unscheduled. Legacy menus migrate in place to schema version 2 without dropping data.
+- Automatic generation deliberately retains its five-day contract. This gives the scheduled job a testable starting shape without making that shape immutable after generation.
+- `modify_menu_day` is now an upsert operation: it can add a missing weekday, change a plan, record an unavailable day, or remove a day. Moving and swapping remain atomic operations for existing day bundles.
+- Shared free-form household memories are supplied to automatic generation as soft planning context. Declarative custom rules remain available only when deterministic enforcement is actually wanted.
+- Menu mutations keep a bounded audit trail containing source, actor, timestamp, request ID, and before/after data. Repeated request IDs return the original action receipt rather than applying the mutation twice.
+
+## Remaining intentional boundaries
+
+- The current schedule models one dinner per weekday. Lunch/dinner slots or multiple meals on one date would require changing the day key to a date-and-meal-slot identity.
+- Dish categories still define the storage roles for main and dry-chicken side. The AI can recategorise dishes and explicit edits can override weekly category distribution, but the persisted main/side fields remain typed.
+- Complex deterministic preference policies still need the declarative rule language. Nuanced preferences should normally be stored as household memory and interpreted by the AI.
+- Telegram write authority remains limited to the configured trusted group and optional user allowlist. New external or destructive operations should continue using explicit authorization and audit receipts.
 
 ## Later patch: recipes
 
@@ -52,4 +66,4 @@ Recipes should be separate versioned records rather than large text fields on di
 - Safety: recipe text remains untrusted data, never prompt-level instructions; mutations retain actor/source audit metadata.
 - Migration: existing dishes remain valid with no assigned recipe, so recipe adoption can be incremental.
 
-That work is intentionally kept out of this patch so the menu-action fix stays reviewable and does not mix a storage migration with agent behavior changes.
+That work remains intentionally separate from this branch so recipes receive their own schema migration, tool contract, and tests.

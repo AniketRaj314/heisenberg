@@ -38,16 +38,19 @@ export function buildMenuFacts(menu, dishes) {
       "fine, but they are not a second main dish."
   };
   if (!menu) return { menu_available: false, ...compositionFacts };
-  const scheduledDays = [...menu.days].sort(
+  const plannedDays = menu.days.filter(
+    (entry) => (entry.meal_status ?? "planned") === "planned"
+  );
+  const scheduledDays = [...plannedDays].sort(
     (a, b) => WEEKDAYS.indexOf(a.day) - WEEKDAYS.indexOf(b.day)
   );
   const scheduledDayNames = scheduledDays.map((entry) => entry.day);
   const activeDrySides = dryChickenSides;
   const dishesByName = new Map(dishes.map((dish) => [dish.name, dish]));
-  const usedDrySides = menu.days
+  const usedDrySides = plannedDays
     .map((entry) => entry.side_chicken)
     .filter(Boolean);
-  const uncoveredEligibleDays = menu.days
+  const uncoveredEligibleDays = plannedDays
     .filter(
       (entry) => {
         const mainCategory = dishesByName.get(entry.main_dish)?.category;
@@ -77,6 +80,12 @@ export function buildMenuFacts(menu, dishes) {
   return {
     menu_available: true,
     ...compositionFacts,
+    flexible_schedule_rule:
+      "Any weekday may be planned, marked dining out, marked skipped, or unscheduled. " +
+      "Direct household edits override the generated five-day template.",
+    non_planned_days: menu.days
+      .filter((entry) => (entry.meal_status ?? "planned") !== "planned")
+      .map((entry) => ({ day: entry.day, meal_status: entry.meal_status })),
     side_allocation_rule:
       "Chicken-main days have no catalogued side. Every other day should have one " +
       "active dry-chicken side. A side may repeat during the week, but not on " +
@@ -250,7 +259,7 @@ export async function runAgent(userMessage, telegramSender = {}) {
         const result = await executeTool(
           call.function.name,
           args,
-          { actor: currentSender, source: "telegram-agent" }
+          { actor: currentSender, source: "telegram-agent", requestId: call.id }
         );
         const actionSummary = summarizeToolAction(call.function.name, args, result);
         if (actionSummary) completedActions.push(actionSummary);
