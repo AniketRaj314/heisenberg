@@ -395,6 +395,40 @@ test("generation retries a failed completion and returns a validated candidate",
   assert.match(retryCorrection, /Chicken Curry/);
 });
 
+test("generation removes an impossible side from a chicken-main day", async () => {
+  const generatedMenu = {
+    week_start: "2026-07-27",
+    days: [
+      { day: "Monday", slot_type: "chicken_main", main_dish: "Chicken Curry", side_chicken: "Cajun Chicken", prep_notes: "Marinate Tandoori Chicken overnight for Thursday.", cook_notes: "" },
+      { day: "Tuesday", slot_type: "carb_heavy", main_dish: "Whole Wheat Hakka Noodles", side_chicken: "Lemon Pepper Chicken", prep_notes: "", cook_notes: "" },
+      { day: "Thursday", slot_type: "paneer_main", main_dish: "Palak Paneer", side_chicken: "Tandoori Chicken", prep_notes: "", cook_notes: "" },
+      { day: "Friday", slot_type: "sabzi", main_dish: "Egg Curry", side_chicken: "Cajun Chicken", prep_notes: "", cook_notes: "" },
+      { day: "Saturday", slot_type: "random", main_dish: "Egg Bhurji", side_chicken: "Lemon Pepper Chicken", prep_notes: "", cook_notes: "" }
+    ]
+  };
+  let calls = 0;
+  const result = await generateCandidateWithRetries({
+    prompt: "test",
+    dishes,
+    preferences: {
+      never_use: ["bhindi"],
+      max_paneer_per_week: 1,
+      max_carb_heavy_per_week: 1,
+      cross_week_avoid_last_n_weeks: 3,
+      custom_rules: []
+    },
+    recentMenus: [],
+    weekStart: "2026-07-27",
+    completionFn: async () => {
+      calls += 1;
+      return generatedMenu;
+    }
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.days[0].side_chicken, null);
+  assert.equal(generatedMenu.days[0].side_chicken, "Cajun Chicken");
+});
+
 test("generation failures produce an actionable Telegram message", () => {
   const message = formatMenuGenerationFailure(
     new MenuGenerationError(["Egg Curry repeats while alternatives remain"], 3)

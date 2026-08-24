@@ -9,6 +9,7 @@ import {
 } from "../db/store.js";
 import {
   buildGenerationEligibility,
+  normalizeGeneratedMenu,
   validateMenu
 } from "../domain/menu.js";
 import { buildMenuGenerationPrompt } from "../prompts/menu_generation.js";
@@ -120,7 +121,7 @@ export async function generateCandidateWithRetries({
         `\nUse these exact server-computed eligible choices:\n${JSON.stringify(eligibility)}`
       : "";
     try {
-      menu = await completionFn(prompt, correction);
+      menu = normalizeGeneratedMenu(await completionFn(prompt, correction));
       errors = validateMenu(menu, dishes, preferences, weekStart, recentMenus, {
         recentMeals
       });

@@ -202,6 +202,18 @@ export function parseMenuDraft(menu) {
   return MenuDraftSchema.parse(menu);
 }
 
+export function normalizeGeneratedMenu(menu) {
+  if (!menu || !Array.isArray(menu.days)) return menu;
+  return {
+    ...menu,
+    days: menu.days.map((entry) =>
+      entry?.slot_type === "chicken_main"
+        ? { ...entry, side_chicken: null }
+        : entry
+    )
+  };
+}
+
 export function validateMenu(
   menu,
   dishes,
