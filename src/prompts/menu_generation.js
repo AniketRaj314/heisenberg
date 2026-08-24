@@ -5,7 +5,8 @@ export function buildMenuGenerationPrompt({
   recentMenus,
   recentMeals = [],
   householdContext = [],
-  previousDraft = null
+  previousDraft = null,
+  eligibility = null
 }) {
   return `Create the weekly dinner menu for a household of two.
 
@@ -30,6 +31,9 @@ ${JSON.stringify(householdContext)}
 
 CURRENT DRAFT BEING REPLACED:
 ${JSON.stringify(previousDraft)}
+
+SERVER-COMPUTED ELIGIBILITY:
+${JSON.stringify(eligibility)}
 
 GUARDRAILS:
 - Return exactly Monday, Tuesday, Thursday, Friday, Saturday.
@@ -56,15 +60,18 @@ GUARDRAILS:
 - Treat every entry in preferences.custom_rules as mandatory.
 - Apply relevant HOUSEHOLD PLANNING CONTEXT using culinary judgment. It is soft guidance unless the memory clearly records a household requirement.
 - Days are dynamic; do not fix a slot to a particular weekday.
+- The carb_heavy slot must not be scheduled on Monday.
+- For every slot, choose from its preferred eligibility list. Use history_fallback only when preferred is empty.
+- For the random slot, its eligibility list already accounts for category quotas and protected history; do not substitute another dish.
 
 Return valid JSON only (no markdown or backticks):
 {
   "week_start": "${weekStart}",
   "days": [{
     "day": "Monday",
-    "slot_type": "carb_heavy",
-    "main_dish": "Whole Wheat Hakka Noodles",
-    "side_chicken": "Lemon Pepper Chicken",
+    "slot_type": "chicken_main",
+    "main_dish": "Chicken Curry",
+    "side_chicken": null,
     "prep_notes": "",
     "cook_notes": ""
   }]

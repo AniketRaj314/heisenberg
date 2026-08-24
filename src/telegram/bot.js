@@ -6,7 +6,11 @@ import {
   getRelevantMenu
 } from "../db/store.js";
 import { executeTool } from "../mcp/tools.js";
-import { generateMenu, getMonday } from "../scheduler/generator.js";
+import {
+  formatMenuGenerationFailure,
+  generateMenu,
+  getMonday
+} from "../scheduler/generator.js";
 import { normalizeTelegramSender, runAgent } from "./agent.js";
 import { formatAgentResponse, formatDishes, formatMenu } from "./format.js";
 import { createRateLimiter } from "../security/rateLimit.js";
@@ -124,9 +128,14 @@ export function startTelegramBot({ onStatusChange = () => {} } = {}) {
 
   bot.command("generate", async (ctx) => {
     await replyToMessage(ctx, "Cooking up next week's draft…");
-    const menu = await generateMenu();
-    await sendLongMessage(ctx, formatMenu(menu), { parse_mode: "Markdown" });
-    await replyToMessage(ctx, "Reply with changes, or use /confirm when it looks right.");
+    try {
+      const menu = await generateMenu();
+      await sendLongMessage(ctx, formatMenu(menu), { parse_mode: "Markdown" });
+      await replyToMessage(ctx, "Reply with changes, or use /confirm when it looks right.");
+    } catch (error) {
+      console.error("Menu generation failed:", error);
+      await replyToMessage(ctx, formatMenuGenerationFailure(error));
+    }
   });
 
   bot.command("confirm", async (ctx) => {

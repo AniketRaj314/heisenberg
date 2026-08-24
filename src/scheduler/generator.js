@@ -7,7 +7,10 @@ import {
   searchContext,
   saveMenu
 } from "../db/store.js";
-import { validateMenu } from "../domain/menu.js";
+import {
+  buildGenerationEligibility,
+  validateMenu
+} from "../domain/menu.js";
 import { buildMenuGenerationPrompt } from "../prompts/menu_generation.js";
 import { createRateLimiter } from "../security/rateLimit.js";
 
@@ -18,6 +21,32 @@ const manualGenerationLimiter = createRateLimiter({
   windowMs: 10 * 60_000
 });
 let generationInFlight = null;
+
+export class MenuGenerationError extends Error {
+  constructor(errors, attempts) {
+    super(`AI menu failed validation: ${errors.join("; ")}`);
+    this.name = "MenuGenerationError";
+    this.code = "MENU_GENERATION_VALIDATION_FAILED";
+    this.validationErrors = [...errors];
+    this.attempts = attempts;
+  }
+}
+
+export function formatMenuGenerationFailure(error) {
+  if (error instanceof MenuGenerationError) {
+    const conflicts = error.validationErrors
+      .slice(0, 3)
+      .map((message) => `• ${message}`)
+      .join("\n");
+    return (
+      `I couldn't assemble a valid draft after ${error.attempts} attempts, ` +
+      `so nothing was saved.\n\nLast conflicts:\n${conflicts}\n\n` +
+      "Try /generate again. If this keeps happening, the dish rotation may need more eligible options."
+    );
+  }
+  if (/rate-limited/i.test(error?.message ?? "")) return error.message;
+  return "I couldn't generate a menu right now. Nothing was saved; please try again shortly.";
+}
 
 export function getTimeZone() {
   return process.env.TZ || "Asia/Kolkata";
@@ -76,8 +105,10 @@ export async function generateCandidateWithRetries({
   dishes,
   preferences,
   recentMenus,
+  recentMeals = [],
   previousDraft = null,
   weekStart,
+  eligibility = null,
   completionFn = createCompletion,
   attempts = 3
 }) {
@@ -85,11 +116,14 @@ export async function generateCandidateWithRetries({
   let errors = [];
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const correction = errors.length
-      ? `\n\nYour previous result was invalid. Correct every issue: ${errors.join("; ")}`
+      ? `\n\nYour previous result was invalid. Correct every issue: ${errors.join("; ")}` +
+        `\nUse these exact server-computed eligible choices:\n${JSON.stringify(eligibility)}`
       : "";
     try {
       menu = await completionFn(prompt, correction);
-      errors = validateMenu(menu, dishes, preferences, weekStart, recentMenus);
+      errors = validateMenu(menu, dishes, preferences, weekStart, recentMenus, {
+        recentMeals
+      });
       errors.push(
         ...validateRegenerationDiversity(
           menu,
@@ -103,7 +137,7 @@ export async function generateCandidateWithRetries({
       errors = [`attempt ${attempt + 1} failed: ${error.message}`];
     }
   }
-  throw new Error(`AI menu failed validation: ${errors.join("; ")}`);
+  throw new MenuGenerationError(errors, attempts);
 }
 
 export function validateRegenerationDiversity(
@@ -159,7 +193,11 @@ async function generateMenuInternal({
     searchContext({ scopes: ["household"], query: "", limit: 20 })
   ]);
   const recentMenus = allMenus
-    .filter((menu) => menu.week_start < weekStart)
+    .filter(
+      (menu) =>
+        menu.week_start < weekStart &&
+        ["active", "confirmed"].includes(menu.status)
+    )
     .sort((a, b) => b.week_start.localeCompare(a.week_start))
     .slice(0, Math.max(4, preferences.cross_week_avoid_last_n_weeks ?? 0));
   const previousDraft =
@@ -170,6 +208,13 @@ async function generateMenuInternal({
           menu.status === "draft"
       )
       .sort((a, b) => b.generated_at.localeCompare(a.generated_at))[0] ?? null;
+  const eligibility = buildGenerationEligibility({
+    dishes,
+    preferences,
+    recentMenus,
+    recentMeals,
+    weekStart
+  });
   const prompt = buildMenuGenerationPrompt({
     weekStart,
     dishes,
@@ -177,7 +222,8 @@ async function generateMenuInternal({
     recentMenus,
     recentMeals,
     householdContext,
-    previousDraft
+    previousDraft,
+    eligibility
   });
 
   const menu = await generateCandidateWithRetries({
@@ -185,8 +231,10 @@ async function generateMenuInternal({
     dishes,
     preferences,
     recentMenus,
+    recentMeals,
     previousDraft,
     weekStart,
+    eligibility,
     completionFn
   });
   const saved = await saveMenu(menu);

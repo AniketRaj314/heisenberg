@@ -76,20 +76,126 @@ function mentionsTandooriPrep(text) {
   );
 }
 
-function recentMainNames(recentMenus, weeks) {
+export function protectedMainNames({
+  recentMenus = [],
+  recentMeals = [],
+  weeks = 0,
+  weekStart
+}) {
   if (weeks <= 0) return new Set();
   const protectedWeeks = [];
-  for (const menu of recentMenus) {
+  const eligibleMenus = recentMenus.filter(
+    (menu) =>
+      !menu.status || ["active", "confirmed"].includes(menu.status)
+  );
+  for (const menu of eligibleMenus) {
     if (!protectedWeeks.includes(menu.week_start)) protectedWeeks.push(menu.week_start);
     if (protectedWeeks.length >= weeks) break;
   }
-  return new Set(
-    recentMenus
+  const names = eligibleMenus
       .filter((menu) => protectedWeeks.includes(menu.week_start))
       .flatMap((menu) => menu.days ?? [])
       .map((entry) => entry.main_dish)
-      .filter(Boolean)
+      .filter(Boolean);
+
+  if (weekStart) {
+    const cutoff = new Date(`${weekStart}T00:00:00Z`);
+    cutoff.setUTCDate(cutoff.getUTCDate() - weeks * 7);
+    const cutoffDate = cutoff.toISOString().slice(0, 10);
+    names.push(
+      ...recentMeals
+        .filter(
+          (meal) =>
+            meal.date >= cutoffDate &&
+            meal.date < weekStart &&
+            meal.main_dish
+        )
+        .map((meal) => meal.main_dish)
+    );
+  }
+
+  return new Set(names);
+}
+
+export function buildGenerationEligibility({
+  dishes,
+  preferences,
+  recentMenus = [],
+  recentMeals = [],
+  weekStart
+}) {
+  const customRules = (preferences.custom_rules ?? []).map(parseCustomRule);
+  const banned = [
+    ...(preferences.never_use ?? []),
+    ...customRules.filter((rule) => rule.type === "never").map((rule) => rule.term)
+  ].map(normalize);
+  const active = dishes.filter(
+    (dish) =>
+      dish.active &&
+      !banned.some((term) => normalize(dish.name).includes(term))
   );
+  const recentlyUsed = protectedMainNames({
+    recentMenus,
+    recentMeals,
+    weeks: preferences.cross_week_avoid_last_n_weeks ?? 0,
+    weekStart
+  });
+  const categoryCaps = new Map(
+    customRules
+      .filter((rule) => rule.type === "max_category")
+      .map((rule) => [rule.category, rule.count])
+  );
+  categoryCaps.set(
+    "paneer_main",
+    Math.min(
+      categoryCaps.get("paneer_main") ?? Infinity,
+      preferences.max_paneer_per_week
+    )
+  );
+  categoryCaps.set(
+    "carb_heavy",
+    Math.min(
+      categoryCaps.get("carb_heavy") ?? Infinity,
+      preferences.max_carb_heavy_per_week
+    )
+  );
+
+  const candidatesForSlot = (slot) =>
+    active.filter((dish) => {
+      if (dish.category === "dry_chicken") return false;
+      if (slot !== "random") return dish.category === slot;
+      const cap = categoryCaps.get(dish.category);
+      return cap === undefined || cap > 1;
+    });
+  const mainDishes = Object.fromEntries(
+    MENU_SLOTS.map((slot) => {
+      const candidates = candidatesForSlot(slot);
+      const preferred = candidates.filter((dish) => !recentlyUsed.has(dish.name));
+      return [
+        slot,
+        {
+          preferred: preferred.map((dish) => dish.name),
+          history_fallback:
+            preferred.length === 0 ? candidates.map((dish) => dish.name) : []
+        }
+      ];
+    })
+  );
+  const sides = active
+    .filter((dish) => dish.category === "dry_chicken")
+    .map((dish) => dish.name);
+
+  return {
+    protected_main_dishes: [...recentlyUsed],
+    main_dishes_by_slot: mainDishes,
+    dry_chicken_sides: sides,
+    slot_day_constraints: {
+      carb_heavy: MENU_DAYS.filter((day) => day !== "Monday")
+    },
+    side_day_constraints: {
+      Monday: sides.filter((name) => name !== "Tandoori Chicken")
+    }
+  };
 }
 
 export function parseMenuDraft(menu) {
@@ -102,7 +208,7 @@ export function validateMenu(
   preferences,
   expectedWeekStart,
   recentMenus = [],
-  { requiredDays = MENU_DAYS, mode = "generation" } = {}
+  { requiredDays = MENU_DAYS, mode = "generation", recentMeals = [] } = {}
 ) {
   const enforcePlanningPolicy = mode === "generation";
   const parsed = (enforcePlanningPolicy ? MenuDraftSchema : StoredMenuDraftSchema).safeParse(menu);
@@ -314,8 +420,18 @@ export function validateMenu(
     errors.push("Tandoori Chicken needs an overnight-marination prep note");
   }
 
+  const mondayCarb = plannedEntries.some(
+    (entry) => entry.day === "Monday" && entry.slot_type === "carb_heavy"
+  );
+  if (mondayCarb) errors.push("carb-heavy slot cannot be scheduled on Monday");
+
   const weeksToAvoid = preferences.cross_week_avoid_last_n_weeks ?? 0;
-  const recentlyUsed = recentMainNames(recentMenus, weeksToAvoid);
+  const recentlyUsed = protectedMainNames({
+    recentMenus,
+    recentMeals,
+    weeks: weeksToAvoid,
+    weekStart: expectedWeekStart
+  });
   for (const entry of plannedEntries) {
     if (!recentlyUsed.has(entry.main_dish)) continue;
     const main = byName.get(entry.main_dish);

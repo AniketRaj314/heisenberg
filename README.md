@@ -6,6 +6,8 @@ Heisenberg is an AI-assisted weekly meal planner—because he was *the cook*. It
 
 - Generates Monday, Tuesday, Thursday, Friday, and Saturday menus at 6:00 PM IST every Friday.
 - Validates generated menus against dish categories and household guardrails before saving them.
+- Keeps carb-heavy dinners off Monday and varies the remaining slot assignments.
+- Builds rotation history from confirmed menus and meals reported as eaten; abandoned drafts do not consume the rotation.
 - Lets explicit edits add any weekday or mark it as planned, dining out, skipped, or unscheduled without forcing the generated five-day template.
 - Keeps dated history for meals that were actually eaten, including ad-hoc midweek meals outside an active menu.
 - Stores dishes, menus, preferences, durable scoped memories, and the last 100 conversations with lowdb.
@@ -115,7 +117,7 @@ See `.env.example`. `OPENAI_MENU_MODEL`, `OPENAI_AGENT_MODEL`, `OPENAI_AGENT_REA
 
 For backward compatibility, the application still accepts `OPENAI_MODEL` as a shared fallback when a task-specific model variable is absent.
 
-The application serializes all JSON-store operations, limits conversational and MCP request rates, and limits manual menu generation to three attempts per ten minutes. Scheduled generation catches up after a missed Friday run through the following Tuesday and skips weeks that already have a menu.
+The application serializes all JSON-store operations, limits conversational and MCP request rates, and limits manual menu generation to three requests per ten minutes. Before calling the menu model, it computes exact preferred and history-fallback dishes for every slot. Invalid candidates are retried with those choices, and a failed generation explains the remaining conflicts without saving a partial draft. Scheduled generation catches up after a missed Friday run through the following Tuesday and skips weeks that already have a menu.
 
 Custom rules use deterministic formats so the server can enforce them after AI generation:
 
