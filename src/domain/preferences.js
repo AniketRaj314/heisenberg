@@ -50,7 +50,6 @@ export const PreferencesSchema = z.object({
   max_carb_heavy_per_week: z.number().int().min(1).max(5),
   max_paneer_per_week: z.number().int().min(1).max(5),
   never_use: z.array(z.string().trim().min(1).max(100)).max(100),
-  cross_week_avoid_last_n_weeks: z.number().int().min(0).max(52),
   custom_rules: z.array(CustomRuleSchema).max(50)
 }).strict();
 

@@ -1,3 +1,5 @@
+import { MAX_PREVIOUS_WEEK_REPEATS } from "../domain/menu.js";
+
 export function buildMenuGenerationPrompt({
   weekStart,
   dishes,
@@ -20,10 +22,10 @@ ${JSON.stringify(dishes)}
 PREFERENCES:
 ${JSON.stringify(preferences)}
 
-RECENT MENUS (newest history may be relevant for rotation):
+PREVIOUS WEEK MENU (the only menu used for cross-week rotation; empty if missing):
 ${JSON.stringify(recentMenus)}
 
-RECENT ACTUAL MEALS (including ad-hoc meals outside an active menu):
+PREVIOUS WEEK ACTUAL MEALS (soft context, not additional repeat restrictions):
 ${JSON.stringify(recentMeals)}
 
 HOUSEHOLD PLANNING CONTEXT (soft guidance, newest first):
@@ -54,15 +56,16 @@ GUARDRAILS:
 - Use every eligible active dry_chicken side before repeating one. If repeats are necessary, distribute them as evenly as possible.
 - Dry-chicken sides may repeat within the week, but the same side must not appear on consecutive scheduled meal days. Do not invent a side.
 - Respect needs_overnight_marination: add a prior-day prep note when Tandoori Chicken is used.
-- Avoid main dishes used in the last ${preferences.cross_week_avoid_last_n_weeks ?? 3} weeks unless the available rotation is exhausted.
-- Use RECENT ACTUAL MEALS to avoid unnecessarily repeating mains or chicken sides eaten on recent consecutive dates.
+- Compare only with PREVIOUS WEEK MENU. At most ${MAX_PREVIOUS_WEEK_REPEATS} distinct main dishes from that menu may appear this week, even on different weekdays. Older menus do not restrict choices.
+- This repeat limit is mandatory even when the dish pool is small. Chicken sides do not count toward it. If no previous-week menu exists, there is no cross-week repeat restriction.
+- Use PREVIOUS WEEK ACTUAL MEALS as soft guidance for recent meals and sides; they do not add dishes to the previous-menu repeat count.
 - When CURRENT DRAFT BEING REPLACED is present, this is a genuine regeneration: choose new main dishes rather than returning or merely reshuffling the same menu. Change at least three of the five mains when eligible alternatives exist.
 - Treat every entry in preferences.custom_rules as mandatory.
 - Apply relevant HOUSEHOLD PLANNING CONTEXT using culinary judgment. It is soft guidance unless the memory clearly records a household requirement.
 - Days are dynamic; do not fix a slot to a particular weekday.
 - The carb_heavy slot must not be scheduled on Monday.
-- For every slot, choose from its preferred eligibility list. Use history_fallback only when preferred is empty.
-- For the random slot, its eligibility list already accounts for category quotas and protected history; do not substitute another dish.
+- For every slot, prefer its preferred eligibility list (mains not in the previous menu). You may also use repeat_candidates, but across the entire menu at most ${MAX_PREVIOUS_WEEK_REPEATS} mains may repeat. Never relax this limit when alternatives are exhausted.
+- For the random slot, its eligibility list already accounts for category quotas; do not substitute another dish.
 
 Return valid JSON only (no markdown or backticks):
 {

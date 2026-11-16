@@ -9,6 +9,8 @@ import {
 } from "../db/store.js";
 import {
   buildGenerationEligibility,
+  getPreviousWeekMenu,
+  getPreviousWeekStart,
   normalizeGeneratedMenu,
   validateMenu
 } from "../domain/menu.js";
@@ -106,7 +108,6 @@ export async function generateCandidateWithRetries({
   dishes,
   preferences,
   recentMenus,
-  recentMeals = [],
   previousDraft = null,
   weekStart,
   eligibility = null,
@@ -122,9 +123,7 @@ export async function generateCandidateWithRetries({
       : "";
     try {
       menu = normalizeGeneratedMenu(await completionFn(prompt, correction));
-      errors = validateMenu(menu, dishes, preferences, weekStart, recentMenus, {
-        recentMeals
-      });
+      errors = validateMenu(menu, dishes, preferences, weekStart, recentMenus);
       errors.push(
         ...validateRegenerationDiversity(
           menu,
@@ -186,21 +185,19 @@ async function generateMenuInternal({
   notify,
   completionFn
 } = {}) {
-  const [dishes, preferences, allMenus, recentMeals, householdContext] = await Promise.all([
+  const [dishes, preferences, allMenus, allRecentMeals, householdContext] = await Promise.all([
     getDishes({ activeOnly: true }),
     getPreferences(),
     getMenus(),
     getMealHistory({ scopes: ["household"], limit: 30 }),
     searchContext({ scopes: ["household"], query: "", limit: 20 })
   ]);
-  const recentMenus = allMenus
-    .filter(
-      (menu) =>
-        menu.week_start < weekStart &&
-        ["active", "confirmed"].includes(menu.status)
-    )
-    .sort((a, b) => b.week_start.localeCompare(a.week_start))
-    .slice(0, Math.max(4, preferences.cross_week_avoid_last_n_weeks ?? 0));
+  const previousMenu = getPreviousWeekMenu(allMenus, weekStart);
+  const recentMenus = previousMenu ? [previousMenu] : [];
+  const previousWeekStart = getPreviousWeekStart(weekStart);
+  const recentMeals = allRecentMeals.filter(
+    (meal) => meal.date >= previousWeekStart && meal.date < weekStart
+  );
   const previousDraft =
     allMenus
       .filter(
@@ -213,7 +210,6 @@ async function generateMenuInternal({
     dishes,
     preferences,
     recentMenus,
-    recentMeals,
     weekStart
   });
   const prompt = buildMenuGenerationPrompt({
@@ -232,7 +228,6 @@ async function generateMenuInternal({
     dishes,
     preferences,
     recentMenus,
-    recentMeals,
     previousDraft,
     weekStart,
     eligibility,

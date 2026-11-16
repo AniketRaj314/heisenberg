@@ -36,7 +36,6 @@ const defaults = {
       max_carb_heavy_per_week: 1,
       max_paneer_per_week: 1,
       never_use: ["bhindi"],
-      cross_week_avoid_last_n_weeks: 3,
       custom_rules: []
     }
   },
@@ -127,6 +126,13 @@ export async function initStore() {
       await dbs[name].write();
     })
   );
+  // Retire the old configurable history window for existing installations too.
+  // Menu archives are retained; generation now compares only the previous week.
+  const preferences = dbs.preferences.data.preferences;
+  if (Object.hasOwn(preferences, "cross_week_avoid_last_n_weeks")) {
+    delete preferences.cross_week_avoid_last_n_weeks;
+    await dbs.preferences.write();
+  }
   const menusDb = dbs.menus;
   let menusChanged = false;
   for (const menu of menusDb.data.menus) {

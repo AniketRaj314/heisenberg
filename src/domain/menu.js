@@ -76,52 +76,43 @@ function mentionsTandooriPrep(text) {
   );
 }
 
-export function protectedMainNames({
-  recentMenus = [],
-  recentMeals = [],
-  weeks = 0,
-  weekStart
-}) {
-  if (weeks <= 0) return new Set();
-  const protectedWeeks = [];
-  const eligibleMenus = recentMenus.filter(
-    (menu) =>
-      !menu.status || ["active", "confirmed"].includes(menu.status)
-  );
-  for (const menu of eligibleMenus) {
-    if (!protectedWeeks.includes(menu.week_start)) protectedWeeks.push(menu.week_start);
-    if (protectedWeeks.length >= weeks) break;
-  }
-  const names = eligibleMenus
-      .filter((menu) => protectedWeeks.includes(menu.week_start))
-      .flatMap((menu) => menu.days ?? [])
+export const MAX_PREVIOUS_WEEK_REPEATS = 2;
+
+export function getPreviousWeekStart(weekStart) {
+  const date = new Date(`${weekStart}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - 7);
+  return date.toISOString().slice(0, 10);
+}
+
+export function getPreviousWeekMenu(menus = [], weekStart) {
+  const previousWeekStart = getPreviousWeekStart(weekStart);
+  // Use the accepted plan when present, otherwise the latest posted draft.
+  // Never treat a menu from an older week as last week's menu.
+  const priority = { active: 0, confirmed: 1, draft: 2 };
+  return menus
+    .filter((menu) =>
+      menu.week_start === previousWeekStart && Object.hasOwn(priority, menu.status)
+    )
+    .sort((a, b) =>
+      priority[a.status] - priority[b.status] ||
+      (b.generated_at ?? "").localeCompare(a.generated_at ?? "")
+    )[0] ?? null;
+}
+
+export function previousWeekMainNames(menus, weekStart) {
+  const previousMenu = getPreviousWeekMenu(menus, weekStart);
+  return new Set(
+    (previousMenu?.days ?? [])
+      .filter((entry) => (entry.meal_status ?? "planned") === "planned")
       .map((entry) => entry.main_dish)
-      .filter(Boolean);
-
-  if (weekStart) {
-    const cutoff = new Date(`${weekStart}T00:00:00Z`);
-    cutoff.setUTCDate(cutoff.getUTCDate() - weeks * 7);
-    const cutoffDate = cutoff.toISOString().slice(0, 10);
-    names.push(
-      ...recentMeals
-        .filter(
-          (meal) =>
-            meal.date >= cutoffDate &&
-            meal.date < weekStart &&
-            meal.main_dish
-        )
-        .map((meal) => meal.main_dish)
-    );
-  }
-
-  return new Set(names);
+      .filter(Boolean)
+  );
 }
 
 export function buildGenerationEligibility({
   dishes,
   preferences,
   recentMenus = [],
-  recentMeals = [],
   weekStart
 }) {
   const customRules = (preferences.custom_rules ?? []).map(parseCustomRule);
@@ -134,12 +125,7 @@ export function buildGenerationEligibility({
       dish.active &&
       !banned.some((term) => normalize(dish.name).includes(term))
   );
-  const recentlyUsed = protectedMainNames({
-    recentMenus,
-    recentMeals,
-    weeks: preferences.cross_week_avoid_last_n_weeks ?? 0,
-    weekStart
-  });
+  const recentlyUsed = previousWeekMainNames(recentMenus, weekStart);
   const categoryCaps = new Map(
     customRules
       .filter((rule) => rule.type === "max_category")
@@ -175,8 +161,9 @@ export function buildGenerationEligibility({
         slot,
         {
           preferred: preferred.map((dish) => dish.name),
-          history_fallback:
-            preferred.length === 0 ? candidates.map((dish) => dish.name) : []
+          repeat_candidates: candidates
+            .filter((dish) => recentlyUsed.has(dish.name))
+            .map((dish) => dish.name)
         }
       ];
     })
@@ -186,7 +173,9 @@ export function buildGenerationEligibility({
     .map((dish) => dish.name);
 
   return {
-    protected_main_dishes: [...recentlyUsed],
+    previous_week_start: getPreviousWeekStart(weekStart),
+    previous_week_main_dishes: [...recentlyUsed],
+    max_repeated_mains: MAX_PREVIOUS_WEEK_REPEATS,
     main_dishes_by_slot: mainDishes,
     dry_chicken_sides: sides,
     slot_day_constraints: {
@@ -220,7 +209,7 @@ export function validateMenu(
   preferences,
   expectedWeekStart,
   recentMenus = [],
-  { requiredDays = MENU_DAYS, mode = "generation", recentMeals = [] } = {}
+  { requiredDays = MENU_DAYS, mode = "generation" } = {}
 ) {
   const enforcePlanningPolicy = mode === "generation";
   const parsed = (enforcePlanningPolicy ? MenuDraftSchema : StoredMenuDraftSchema).safeParse(menu);
@@ -437,32 +426,13 @@ export function validateMenu(
   );
   if (mondayCarb) errors.push("carb-heavy slot cannot be scheduled on Monday");
 
-  const weeksToAvoid = preferences.cross_week_avoid_last_n_weeks ?? 0;
-  const recentlyUsed = protectedMainNames({
-    recentMenus,
-    recentMeals,
-    weeks: weeksToAvoid,
-    weekStart: expectedWeekStart
-  });
-  for (const entry of plannedEntries) {
-    if (!recentlyUsed.has(entry.main_dish)) continue;
-    const main = byName.get(entry.main_dish);
-    if (!main) continue;
-    const alternatives = active.filter((dish) => {
-      if (dish.category === "dry_chicken") return false;
-      if (entry.slot_type !== "random" && dish.category !== entry.slot_type) return false;
-      if (recentlyUsed.has(dish.name) || mainNames.includes(dish.name)) return false;
-      if (dish.category === "paneer_main" && paneerCount >= preferences.max_paneer_per_week) {
-        return false;
-      }
-      if (dish.category === "carb_heavy" && carbCount >= preferences.max_carb_heavy_per_week) {
-        return false;
-      }
-      return !banned.some((term) => normalize(dish.name).includes(term));
-    });
-    if (alternatives.length) {
-      errors.push(`${entry.main_dish} repeats within the protected history while alternatives remain`);
-    }
+  const previousNames = previousWeekMainNames(recentMenus, expectedWeekStart);
+  const repeatedNames = [...new Set(mainNames.filter((name) => previousNames.has(name)))];
+  if (repeatedNames.length > MAX_PREVIOUS_WEEK_REPEATS) {
+    errors.push(
+      `${repeatedNames.length} main dishes repeat from the previous week; ` +
+      `at most ${MAX_PREVIOUS_WEEK_REPEATS} are allowed: ${repeatedNames.join(", ")}`
+    );
   }
 
   return [...new Set(errors)];
