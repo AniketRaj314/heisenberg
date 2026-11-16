@@ -7,7 +7,8 @@ Heisenberg is an AI-assisted weekly meal planner—because he was *the cook*. It
 - Generates Monday, Tuesday, Thursday, Friday, and Saturday menus at 6:00 PM IST every Friday.
 - Validates generated menus against dish categories and household guardrails before saving them.
 - Keeps carb-heavy dinners off Monday and varies the remaining slot assignments.
-- Builds rotation history from confirmed menus and meals reported as eaten; abandoned drafts do not consume the rotation.
+- Compares only with the previous calendar week’s menu and allows at most two repeated main dishes across the five dinners. Chicken sides have their own rotation rules.
+- Uses the accepted previous-week menu when available, or the latest draft for that week otherwise; older menus remain archived but do not restrict new plans.
 - Lets explicit edits add any weekday or mark it as planned, dining out, skipped, or unscheduled without forcing the generated five-day template.
 - Keeps dated history for meals that were actually eaten, including ad-hoc midweek meals outside an active menu.
 - Stores dishes, menus, preferences, durable scoped memories, and the last 100 conversations with lowdb.
@@ -117,7 +118,7 @@ See `.env.example`. `OPENAI_MENU_MODEL`, `OPENAI_AGENT_MODEL`, `OPENAI_AGENT_REA
 
 For backward compatibility, the application still accepts `OPENAI_MODEL` as a shared fallback when a task-specific model variable is absent.
 
-The application serializes all JSON-store operations, limits conversational and MCP request rates, and limits manual menu generation to three requests per ten minutes. Before calling the menu model, it computes exact preferred and history-fallback dishes for every slot. It normalises impossible generated combinations, such as an extra side on a chicken-main day, before validation. Invalid candidates are retried with the eligible choices, and a failed generation explains the remaining conflicts without saving a partial draft. Scheduled generation catches up after a missed Friday run through the following Tuesday and skips weeks that already have a menu.
+The application serializes all JSON-store operations, limits conversational and MCP request rates, and limits manual menu generation to three requests per ten minutes. Before calling the menu model, it computes preferred new mains and repeat candidates for every slot. The server enforces a maximum of two repeated mains from the previous calendar week across the entire menu, regardless of weekday placement or available alternatives. If the previous week has no menu, no cross-week limit is applied. Actual meals from the previous week provide soft context only; older meal records are excluded from the generation prompt. It normalises impossible generated combinations, such as an extra side on a chicken-main day, before validation. Invalid candidates are retried with the eligible choices, and a failed generation explains the remaining conflicts without saving a partial draft. Scheduled generation catches up after a missed Friday run through the following Tuesday and skips weeks that already have a menu.
 
 Custom rules use deterministic formats so the server can enforce them after AI generation:
 
@@ -128,6 +129,8 @@ Custom rules use deterministic formats so the server can enforce them after AI g
 - `pair:<dish>|<dish>`
 
 These are generation policies, not immutable properties of stored menus. The AI applies them when creating a draft, while a direct user edit is allowed to override rotation, category quotas, history avoidance, and other planning defaults. Storage continues to enforce valid active dish references, unique weekdays, and valid main/side roles.
+
+The former `cross_week_avoid_last_n_weeks` preference is removed automatically on startup; existing installations also adopt the previous-week-only, two-repeat policy. If the available dishes or custom rules make the limit impossible, generation fails without saving an invalid draft. Explicit user edits remain household overrides.
 
 Stored menus use schema version 2. Existing menu JSON is migrated automatically on startup by marking legacy entries as `planned`; no existing dishes or notes are discarded.
 

@@ -10,7 +10,7 @@ import {
 } from "../src/scheduler/generator.js";
 import {
   buildGenerationEligibility,
-  protectedMainNames
+  previousWeekMainNames
 } from "../src/domain/menu.js";
 import { getCatchUpWeekStart } from "../src/scheduler/cron.js";
 import { bearerTokenMatches } from "../src/auth/bearer.js";
@@ -59,7 +59,6 @@ test("valid menu passes guardrail validation", () => {
         never_use: ["bhindi"],
         max_paneer_per_week: 1,
         max_carb_heavy_per_week: 1,
-        cross_week_avoid_last_n_weeks: 3,
         custom_rules: []
       },
       "2026-07-27"
@@ -87,7 +86,6 @@ test("generation schedules carb-heavy food after Monday", () => {
         never_use: ["bhindi"],
         max_paneer_per_week: 1,
         max_carb_heavy_per_week: 1,
-        cross_week_avoid_last_n_weeks: 3,
         custom_rules: []
       },
       "2026-07-27"
@@ -95,79 +93,16 @@ test("generation schedules carb-heavy food after Monday", () => {
   );
 });
 
-test("rotation history ignores drafts and includes actual meals", () => {
-  const protectedNames = protectedMainNames({
-    recentMenus: [
-      {
-        week_start: "2026-08-17",
-        status: "draft",
-        days: [{ main_dish: "Chicken Curry" }]
-      },
-      {
-        week_start: "2026-08-10",
-        status: "active",
-        days: [{ main_dish: "Egg Curry" }]
-      }
-    ],
-    recentMeals: [
-      { date: "2026-08-22", main_dish: "Paneer Sauté" },
-      { date: "2026-07-01", main_dish: "Old Dinner" }
-    ],
-    weeks: 3,
-    weekStart: "2026-08-31"
-  });
-
-  assert.equal(protectedNames.has("Chicken Curry"), false);
-  assert.equal(protectedNames.has("Egg Curry"), true);
-  assert.equal(protectedNames.has("Paneer Sauté"), true);
-  assert.equal(protectedNames.has("Old Dinner"), false);
+test("rotation uses only the previous calendar week's menu", () => {
+  const names = previousWeekMainNames([
+    { week_start: "2026-08-17", status: "active", days: [{ main_dish: "Chicken Curry" }] },
+    { week_start: "2026-08-24", status: "active", days: [{ main_dish: "Egg Curry" }] },
+    { week_start: "2026-08-31", status: "draft", days: [{ main_dish: "Palak Paneer" }] }
+  ], "2026-08-31");
+  assert.deepEqual([...names], ["Egg Curry"]);
 });
 
-test("actual meals enforce rotation while abandoned drafts do not", () => {
-  const expandedDishes = [
-    ...dishes,
-    { name: "Chicken Chilli", category: "chicken_main", active: true }
-  ];
-  const menu = {
-    week_start: "2026-08-31",
-    days: [
-      { day: "Monday", slot_type: "chicken_main", main_dish: "Chicken Curry", side_chicken: null, prep_notes: "", cook_notes: "" },
-      { day: "Tuesday", slot_type: "carb_heavy", main_dish: "Whole Wheat Hakka Noodles", side_chicken: "Lemon Pepper Chicken", prep_notes: "", cook_notes: "" },
-      { day: "Thursday", slot_type: "paneer_main", main_dish: "Palak Paneer", side_chicken: "Tandoori Chicken", prep_notes: "Marinate Tandoori Chicken overnight before Thursday.", cook_notes: "" },
-      { day: "Friday", slot_type: "sabzi", main_dish: "Egg Curry", side_chicken: "Cajun Chicken", prep_notes: "", cook_notes: "" },
-      { day: "Saturday", slot_type: "random", main_dish: "Egg Bhurji", side_chicken: "Lemon Pepper Chicken", prep_notes: "", cook_notes: "" }
-    ]
-  };
-  const preferences = {
-    never_use: ["bhindi"],
-    max_paneer_per_week: 1,
-    max_carb_heavy_per_week: 1,
-    cross_week_avoid_last_n_weeks: 3,
-    custom_rules: []
-  };
-  const abandonedDraft = {
-    week_start: "2026-08-17",
-    status: "draft",
-    days: [{ main_dish: "Chicken Curry" }]
-  };
-
-  assert.deepEqual(
-    validateMenu(menu, expandedDishes, preferences, "2026-08-31", [abandonedDraft]),
-    []
-  );
-  assert.ok(
-    validateMenu(
-      menu,
-      expandedDishes,
-      preferences,
-      "2026-08-31",
-      [abandonedDraft],
-      { recentMeals: [{ date: "2026-08-23", main_dish: "Chicken Curry" }] }
-    ).some((error) => /Chicken Curry repeats within the protected history/.test(error))
-  );
-});
-
-test("generation eligibility exposes exact preferred and fallback dishes", () => {
+test("generation eligibility separates new mains from allowed repeat candidates", () => {
   const expandedDishes = [
     ...dishes,
     { name: "Chicken Chilli", category: "chicken_main", active: true },
@@ -179,12 +114,11 @@ test("generation eligibility exposes exact preferred and fallback dishes", () =>
       never_use: ["bhindi"],
       max_paneer_per_week: 1,
       max_carb_heavy_per_week: 1,
-      cross_week_avoid_last_n_weeks: 3,
       custom_rules: []
     },
     recentMenus: [
       {
-        week_start: "2026-08-17",
+        week_start: "2026-08-24",
         status: "active",
         days: [{ main_dish: "Chicken Curry" }]
       }
@@ -197,8 +131,8 @@ test("generation eligibility exposes exact preferred and fallback dishes", () =>
     ["Chicken Chilli"]
   );
   assert.deepEqual(
-    eligibility.main_dishes_by_slot.chicken_main.history_fallback,
-    []
+    eligibility.main_dishes_by_slot.chicken_main.repeat_candidates,
+    ["Chicken Curry"]
   );
   assert.equal(
     eligibility.main_dishes_by_slot.random.preferred.includes("Pesto Spaghetti"),
@@ -225,7 +159,6 @@ test("dry chicken sides may repeat, but not on consecutive scheduled days", () =
       never_use: ["bhindi"],
       max_paneer_per_week: 1,
       max_carb_heavy_per_week: 1,
-      cross_week_avoid_last_n_weeks: 3,
       custom_rules: []
     },
     "2026-07-27"
@@ -240,7 +173,6 @@ test("dry chicken sides may repeat, but not on consecutive scheduled days", () =
         never_use: ["bhindi"],
         max_paneer_per_week: 1,
         max_carb_heavy_per_week: 1,
-        cross_week_avoid_last_n_weeks: 3,
         custom_rules: []
       },
       "2026-07-27"
@@ -276,7 +208,6 @@ test("generation uses every eligible dry chicken side before repeating one", () 
       never_use: ["bhindi"],
       max_paneer_per_week: 1,
       max_carb_heavy_per_week: 1,
-      cross_week_avoid_last_n_weeks: 3,
       custom_rules: []
     },
     "2026-07-27"
@@ -302,7 +233,6 @@ test("generated menus still require the default weekdays", () => {
       never_use: ["bhindi"],
       max_paneer_per_week: 1,
       max_carb_heavy_per_week: 1,
-      cross_week_avoid_last_n_weeks: 3,
       custom_rules: []
     },
     "2026-07-27"
@@ -336,14 +266,13 @@ test("automatic generation receives free-form household planning context", () =>
       never_use: [],
       max_paneer_per_week: 1,
       max_carb_heavy_per_week: 1,
-      cross_week_avoid_last_n_weeks: 3,
       custom_rules: []
     },
     recentMenus: [],
     householdContext: [{ content: "Prefer easy induction-friendly dinners" }],
     eligibility: {
       main_dishes_by_slot: {
-        sabzi: { preferred: ["Egg Bhurji"], history_fallback: [] }
+        sabzi: { preferred: ["Egg Bhurji"], repeat_candidates: [] }
       }
     }
   });
@@ -376,7 +305,6 @@ test("generation retries a failed completion and returns a validated candidate",
       never_use: ["bhindi"],
       max_paneer_per_week: 1,
       max_carb_heavy_per_week: 1,
-      cross_week_avoid_last_n_weeks: 3,
       custom_rules: []
     },
     recentMenus: [],
@@ -414,7 +342,6 @@ test("generation removes an impossible side from a chicken-main day", async () =
       never_use: ["bhindi"],
       max_paneer_per_week: 1,
       max_carb_heavy_per_week: 1,
-      cross_week_avoid_last_n_weeks: 3,
       custom_rules: []
     },
     recentMenus: [],
@@ -474,7 +401,6 @@ test("regeneration rejects a near-duplicate draft when alternatives exist", asyn
     never_use: ["bhindi"],
     max_paneer_per_week: 1,
     max_carb_heavy_per_week: 1,
-    cross_week_avoid_last_n_weeks: 3,
     custom_rules: []
   };
   assert.match(
